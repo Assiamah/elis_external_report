@@ -1,0 +1,7658 @@
+let startDate;
+let endDate;
+let dateFromPicker;
+let dateToPicker;
+let isSyncingMonitorDates = false;
+
+$(function () {
+
+
+let newdatestart;
+let newdateend;
+let lastServiceType = null;
+
+
+
+
+// Handle select all checkbox
+// "Select All" checkbox logic
+// Handle select all checkbox
+$(document).on('change', '#select-all', function() {
+  const isChecked = $(this).is(':checked');
+  $('.app-checkbox').prop('checked', isChecked);
+});
+
+// Handle individual checkbox changes (optional)
+$(document).on('change', '.app-checkbox', function() {
+  if (!$(this).is(':checked')) {
+    $('#select-all').prop('checked', false);
+  } else if ($('.app-checkbox:checked').length === $('.app-checkbox').length) {
+    $('#select-all').prop('checked', true);
+  }
+});
+
+
+    // Get current date info
+const today = new Date();
+const yearStart = new Date(today.getFullYear(), 0, 1); // Jan 1 current year
+
+function updateDisplayedDateRange() {
+  const start = $('#startdate').val();
+  const end = $('#enddate').val();
+  $('#displayDateRange').text(`${start} - ${end}`);
+  $('#displayDateRange1').text(`${start} - ${end}`);
+  $('#displayDateRange2').text(`${start} - ${end}`);
+  $('#displayDateRange3').text(`${start} - ${end}`);
+  $('#displayDateRange4').text(`${start} - ${end}`);
+  $('#displayDateRange5').text(`${start} - ${end}`);
+}
+
+// --- Date From ---
+  dateFromPicker =   flatpickr("#datefrom", {
+        dateFormat: "Y-m-d", // Internal value format (YYYY-MM-DD)
+        altInput: true, // Enables an alternative input field for display
+        altFormat: "j F Y", // Display format (e.g., "1 February 2025")
+        allowInput: true, // Allows manual input
+        onChange: function(selectedDates, dateStr, instance) {
+            let formattedDate = instance.formatDate(selectedDates[0], "j F Y"); // Format in "1 February 2025"
+            
+            console.log("Selected date (YYYY-MM-DD):", dateStr); 
+            console.log("Selected date (j F Y):", formattedDate); 
+    
+            $('#start_date').val(dateStr);
+
+            $('#startdate').val(formattedDate);
+
+            // 🔹 Set minDate of "Date To" dynamically
+        dateToPicker.set('minDate', dateStr);
+
+        }
+    });
+
+
+// --- Date To ---
+dateToPicker = flatpickr("#dateto", {
+  dateFormat: "Y-m-d",
+  altInput: true,
+  altFormat: "j F Y",
+  allowInput: true,
+  defaultDate: today, // prefill to today
+  onChange: async function (selectedDates, dateStr, instance) {
+    if (!$('#datefrom').val()) {
+      alert("Please select 'Date From' before selecting 'Date To'.");
+      $('#dateto').val('');
+      return;
+    }
+
+    let dateFromVal = $('#datefrom').val();
+    if (new Date(dateStr) < new Date(dateFromVal)) {
+      alert("End date cannot be earlier than start date.");
+      $('#dateto').val('');
+      return;
+    }
+
+    let formattedDate = instance.formatDate(selectedDates[0], "j F Y");
+    $('#end_date').val(dateStr);
+    $('#enddate').val(formattedDate);
+    updateDisplayedDateRange();
+
+    // Load dashboard data whenever 'to' date changes
+    if (!isSyncingMonitorDates) {
+      loadDashboardData();
+    }
+  }
+});
+
+// --- Prefill hidden fields for first load ---
+$('#start_date').val(flatpickr.formatDate(yearStart, "Y-m-d"));
+$('#end_date').val(flatpickr.formatDate(today, "Y-m-d"));
+$('#startdate').val(flatpickr.formatDate(yearStart, "j F Y"));
+$('#enddate').val(flatpickr.formatDate(today, "j F Y"));
+updateDisplayedDateRange();
+
+$('#datefrom, #dateto').on('change', function() {
+  updateDisplayedDateRange();
+});
+
+// --- Auto-load on page ready ---
+$(document).ready(function () {
+  if ($("#page_name").text() === "director_compliance") {
+    setTimeout(function () {
+      loadDashboardData();
+    }, 2000); // 2000ms = 2 seconds
+  }
+});
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+     function loadDashboardData() {
+
+     startDate = $('#start_date').val();
+     endDate = $('#end_date').val();
+     updateDisplayedDateRange();
+
+
+
+
+    let region_id = $('#sel_change_region_compliance').val();
+    if (region_id != undefined) {
+        region_id = region_id.replace(".0", "");
+    }
+
+    var user_division = $('#director_division').val();
+
+    console.log(startDate,endDate,user_division)
+    $.ajax({
+        type: "POST",
+        url: "director_dashboard",
+        data: {
+            request_type: 'director_report_dashboard_all',
+            division: user_division,
+            date_from: startDate,  // Add start_date parameter
+            date_to: endDate       // Add end_date parameter
+        },
+        cache: false,
+        success: function(response) {
+            var reccc = JSON.parse(response);
+            console.log(reccc);
+
+            firmList = reccc;
+            
+            let totalRec = reccc.total_apps_rec[0].total;
+            let totalRecComp = reccc.total_comp_divisional_year[0].total;
+            let totalpercentage = ((totalRecComp / totalRec) * 100).toFixed(2) + '%';
+
+            $("#app-received-today").html(
+                new Intl.NumberFormat().format(reccc.apps_rec_day[0].total)
+            );
+            $("#app-received-month").html(
+                new Intl.NumberFormat().format(reccc.apps_rec_month[0].total)
+            );
+            $("#app-completed-today").html(
+                new Intl.NumberFormat().format(reccc.apps_comp_day[0].total)
+            );
+            $("#app-completed-month").html(
+                new Intl.NumberFormat().format(reccc.apps_comp_month[0].total)
+            );
+
+            // applications received for the year
+            showRegionSummary("#app-received-year", reccc.apps_rec_divisional, 'info');
+
+            // applications completed for the year
+            showRegionSummary("#app-completed-year", reccc.apps_comp_divisional, 'success');
+
+            // showRegionSummary received and completed for the year
+            showRegionSummary(
+                "#app-received-completed-year",
+                reccc.apps_comp_divisional_year,
+                'default'
+            );
+
+            // applications past due for the year
+            showRegionSummary(
+                "#app-past-due-year",
+                reccc.apps_past_due_dates_divisional,
+                'danger'
+            );
+
+            // applications with divisions
+            showRegionSummary("#app-with-divisions", reccc.apps_at_division, 'warning');
+
+            document.getElementById('pec_id').innerHTML = totalpercentage;
+
+
+            const regionalPerformance = reccc.regional_performance;
+//             const regionalPerformance = [
+//   {"region_name":"Greater Accra - Accra Office","completion_rate":92.9,"avg_processing_days":17.8,"total_received":9471},
+//   {"region_name":"Bono East - Techiman Office","completion_rate":88.0,"avg_processing_days":126.5,"total_received":25},
+//   {"region_name":"Greater Accra -Tema Office","completion_rate":84.6,"avg_processing_days":37.7,"total_received":39},
+//   {"region_name":"Western North Region - Sefwi-Wiawso Office","completion_rate":51.1,"avg_processing_days":182.4,"total_received":45},
+//   {"region_name":"Ahafo - Goaso Office","completion_rate":32.3,"avg_processing_days":0.0,"total_received":31}
+// ];
+
+// Initialize ECharts
+const chart = echarts.init(document.getElementById("regionComparisonChart"));
+
+function renderRegionChart(metric) {
+  let xLabels = regionalPerformance.map(r => r.region_name);
+  let yValues = regionalPerformance.map(r => r[metric]);
+  
+  // Customize axis titles
+  let metricLabel = metric === "completion_rate" ? "Completion Rate (%)" :
+                    metric === "avg_processing_days" ? "Avg Processing Days" :
+                    "Applications Received";
+
+  // Dynamic color logic
+  const getBarColor = (value) => {
+    if (metric === "completion_rate") {
+      if (value < 60) return "#e74c3c"; // red
+      if (value < 80) return "#f1c40f"; // yellow
+      return "#27ae60"; // green
+    }
+    if (metric === "avg_processing_days") {
+      if (value > 60) return "#e74c3c";
+      if (value > 30) return "#f39c12";
+      return "#27ae60";
+    }
+    return "#3498db";
+  };
+
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      formatter: params => {
+        const data = params[0];
+        return `${data.name}<br><strong>${metricLabel}:</strong> ${data.value}${metric === 'completion_rate' ? '%' : ''}`;
+      }
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '10%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      data: xLabels,
+      axisLabel: {
+        rotate: 30,
+        fontSize: 11
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: metricLabel,
+      nameTextStyle: { fontWeight: 'bold' }
+    },
+    series: [{
+      name: metricLabel,
+      type: 'bar',
+      data: yValues,
+      itemStyle: {
+        color: (params) => getBarColor(params.value),
+        borderRadius: [6, 6, 0, 0]
+      },
+      label: {
+        show: true,
+        position: 'top',
+        fontSize: 11,
+        formatter: (val) => metric === 'completion_rate' ? `${val.value.toFixed(1)}%` : val.value
+      }
+    }]
+  };
+
+  chart.setOption(option);
+}
+
+// Initial load
+renderRegionChart("completion_rate");
+
+// When metric changes
+$("#region-comparison-metric").on("change", function() {
+  const selectedMetric = $(this).val();
+  renderRegionChart(selectedMetric);
+});
+
+
+
+
+// performance metric
+
+    // Simulated response (you’d replace this with your actual JSON object
+// Reference to container
+const alertsContainer = $("#performance-alerts");
+
+// Clear old alerts
+alertsContainer.empty();
+
+// Loop through and append alerts
+reccc.performance_alerts.forEach(alert => {
+  let icon = '';
+
+  // Pick icon based on alert type
+  switch (alert.alert_type) {
+    case 'success':
+      icon = '<i class="fas fa-check-circle"></i>';
+      break;
+    case 'danger':
+      icon = '<i class="fas fa-exclamation-circle"></i>';
+      break;
+    case 'warning':
+      icon = '<i class="fas fa-exclamation-triangle"></i>';
+      break;
+    case 'info':
+      icon = '<i class="fas fa-info-circle"></i>';
+      break;
+    default:
+      icon = '<i class="fas fa-bell"></i>';
+  }
+
+  // Create alert HTML
+  const alertHTML = `
+    <div class="alert alert-${alert.alert_type} alert-dismissible fade show" role="alert">
+      <small>${icon} <strong>${alert.alert_message}</strong></small>
+    </div>
+  `;
+
+  alertsContainer.append(alertHTML);
+});
+
+
+ //Services idicators
+
+
+ function renderServiceTypeBreakdown(reccc) {
+  const container = document.getElementById("service-type-breakdown");
+  container.innerHTML = ""; // clear existing content
+
+  // Color classes to rotate
+  const colors = ["bg-primary", "bg-success", "bg-info", "bg-warning", "bg-danger", "bg-secondary"];
+  
+  // Get service type breakdown from JSON
+  const breakdown = reccc.service_type_breakdown || [];
+
+  breakdown.forEach((item, index) => {
+    const color = colors[index % colors.length]; // cycle through colors
+    const percentage = item.percentage.toFixed(1); // format to 1 decimal
+
+const row = `
+<div class="region-bar mb-2 d-flex align-items-center justify-content-between">
+  
+  <div class="region-name"
+       style="width: 30%; font-weight: 500; white-space: normal;">
+       ${item.service_type}
+  </div>
+
+  <div class="region-chart-bar"
+       style="width: 55%; background: #f1f1f1; height: 10px; border-radius: 5px; overflow: hidden;">
+       <div class="bar-fill ${color}"
+            style="width: ${percentage}%; height: 100%;">
+       </div>
+  </div>
+
+  <div class="region-value"
+       style="width: 10%; text-align: right;">
+       ${percentage}%
+  </div>
+
+</div>
+`;
+    container.insertAdjacentHTML("beforeend", row);
+  });
+}
+
+// Example usage with your JSON data
+renderServiceTypeBreakdown(reccc);
+
+
+
+        },
+        error: function(xhr) {
+            console.error("Failed to load dashboard data:", xhr);
+        }
+    });
+}
+
+
+
+
+  // $('#sendMessageModal').on('shown.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#past_due_apps_modal").css("z-index", "1029");
+  // })
+  
+  // $('#sendMessageModal').on('hidden.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#past_due_apps_modal").css("z-index", "");
+  // })
+  
+  
+  
+  // $('#sendMessageModal').on('shown.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#apps_with_division_officers_modal").css("z-index", "1029");
+  // })
+  
+  
+  
+  //  $('#sendMessageModal').on('hidden.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#apps_with_division_officers_modal").css("z-index", "");
+  // })
+
+
+
+
+  // $('#serviceTypeModal').on('shown.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#regionsModal").css("z-index", "1029");
+  // })
+  
+  
+  
+  //  $('#serviceTypeModal').on('hidden.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#regionsModal").css("z-index", "");
+  // })
+
+
+
+
+
+  // $('#completedTodayserviceTypeModal').on('shown.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#regionsModal").css("z-index", "1029");
+  // })
+  
+  
+  
+  //  $('#completedTodayserviceTypeModal').on('hidden.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#regionsModal").css("z-index", "");
+  // })
+
+
+
+
+
+  // $('#completedMonthserviceTypeModal').on('shown.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#regionsModal").css("z-index", "1029");
+  // })
+  
+  
+  
+  //  $('#completedMonthserviceTypeModal').on('hidden.bs.modal', function () {
+  //   //$('#myInput').trigger('focus')
+  //   //$("#eventDetails").modal({backdrop: true});
+  //   $("#regionsModal").css("z-index", "");
+  // })
+
+
+
+
+
+
+
+
+  
+  
+
+
+      
+
+
+  $(document).on("click", ".showApplicationsModal", function (event) {
+    event.preventDefault();
+
+    let item = $(this);
+    // let modal = $("#applicationsModal");
+    let type = item.data("type") ?? "";
+
+    let title = item.data("title");
+    console.log(title);
+
+    // let modal = title !== "Applications With Divisions" ? $("#applicationsModal") : $("#completedapplicationsModal");
+
+    // let modal = (title === "Applications Completed" || title === "Applications Received and Completed") ? $("#completedapplicationsModal") : $("#applicationsModal");
+
+
+    let modal = (title === "Applications Completed" || title === "Applications Received and Completed") ? $("#completedapplicationsModal") : ((title === "Applications" || title === "Applications Past Due Date") ? $("#new_modal") : $("#applicationsModal"));
+    
+
+    let date = item.data("date") ?? "";
+
+    let url = item.data("url");
+
+    let data = {};
+    data[item.data("key")] = item.data("value");
+
+    let method = item.data("method");
+    let period = item.data("period");
+    let by = item.data("by");
+
+    let staff = item.data("staff");
+   
+    let action =
+      method +
+      (period ? `_${period}` : "") +
+      (typeof by === "undefined" ? "" : `_${by}`) +
+      "_applications";
+
+    submitAjax(url, action, data, function (data) {
+      
+      
+      data = data.apps_with_staff || data.apps_at_division || [];
+      
+      let applicationsData = data.map(function (item) {
+        let sendMessageAction =
+          typeof staff === "undefined"
+            ? ""
+            : `<a data-job-number="${
+                item.job_number
+              }" data-staff='${JSON.stringify(
+                staff
+              )}' class="dropdown-item sendMessage" href="#">Send Message</a>`;
+        
+        let page_name_title = $("#page_name").text();
+
+        return {
+          ...item,
+          action: `<div class="btn-group" role="group">
+            <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              Actions
+            </button>
+            <div class="dropdown-menu">
+            <form class="d-inline" target="_blank" action="front_office_view_application" method="post">
+              <input type="hidden" name="case_number" id="case_number" value="${item.transaction_number}">
+              <input type="hidden" name="search_text" id="search_text" value="${item.case_number}">
+              <input type="hidden" name="job_number" id="job_number" value="${item.job_number}">
+              <input type="hidden" name="business_process_sub_name" id="business_process_sub_name" value="${item.business_process_sub_name}">
+              <button type="submit" name="save" class="dropdown-item" >View</button>
+            </form>
+              ${sendMessageAction}
+              
+              ${page_name_title ==="unit_case_management" ?`
+              <a href="#" class="dropdown-item "  data-job_number="${item.job_number}" data-ar_name="${item.ar_name}"
+        data-business_process_sub_name="${item.business_process_sub_name}"  data-toggle="modal" data-target="#askForPurposeOfBatching">
+        Add to Batch List
+        </a>`
+          
+              : ""}
+              
+              
+              
+            </div>
+          </div>`,
+        };
+      });
+
+      modal
+        .find(".modal-body table")
+        .DataTable({ destroy: true, responsive: true, data: applicationsData });
+    });
+
+    modal
+      .find("#applicationsModalLabel")
+      .html(`${type} ${title} <span class="text-primary">${date}</span>`);
+
+    let sendMessageAction =
+      typeof staff === "undefined"
+        ? ""
+        : `<button data-staff='${JSON.stringify(
+            staff
+          )}' class="sendMessage btn btn-primary ml-auto" type="button">Send Message</button>`;
+
+    $(sendMessageAction).insertAfter(modal.find("#applicationsModalLabel"));
+
+    modal.find(".modal-body table").DataTable();
+
+    modal.modal("show");
+  });
+
+
+//     let divisions = [
+//       { division: "SMD", total: 0 },
+//       { division: "LRD", total: 0 },
+//       { division: "PVLMD", total: 0 },
+//       { division: "LVD", total: 0 },
+//     { division: "RLO", total: 0 },
+//     ];
+  
+//     let colors = ["danger", "warning", "default", "info", "success", "secondary"];
+  
+    // $(document).on("click", ".sendMessage", function (event) {
+    //   event.preventDefault();
+  
+    //   let sendMessageModal = $("#sendMessageModal");
+  
+    //   let staff = $(this).data("staff");
+
+    //   let staffid = $(this).data("staffid");
+      
+  
+    //   let jobNumbers = $(this).data("jobnumber");
+
+    //   // Convert jobNumbers to an array if it is a comma-separated string
+    //   if (typeof jobNumbers === "string") {
+    //     jobNumbers = jobNumbers.split(",").map((job) => ({ job_number: job.trim() }));
+    //   } else if (typeof jobNumbers === "undefined") {
+    //     jobNumbers = [];
+    //   }
+      
+    //   // If jobNumbers is empty, fetch from DataTable
+    //   if (jobNumbers.length <= 0) {
+    //     jobNumbers = $(this)
+    //       .parents(".modal")
+    //       .find("table")
+    //       .DataTable()
+    //       .rows()
+    //       .data()
+    //       .toArray()
+    //       .map((currentItem) => {
+    //         return { job_number: currentItem[0] }; // Ensure index 0 is job_number
+    //       });
+    //   }
+      
+    //   console.log(jobNumbers); // Check the output in console
+
+    //   console.log(staff);
+    //   console.log(staffid);
+      
+      
+  
+    //   // set hidden job_numbers input to job number array
+    //   sendMessageModal.find("#job_numbers").val(JSON.stringify(jobNumbers));
+  
+    //   // set hidden staff input to staff id
+    //   sendMessageModal.find("#officer_id").val(staffid);
+    //   sendMessageModal.find("#officer_name").val(staff);
+  
+    //   sendMessageModal
+    //     .find("#sendMessageModalLabel")
+    //     .html(`Send Message To <span class="text-primary">${staff}</span>`);
+  
+    //   sendMessageModal.modal("show"); 
+    // });
+  
+
+    $(document).on("click", ".sendMessage", function (event) {
+  event.preventDefault();
+
+  const table = $("#past_due_apps_with_staff").DataTable();
+
+  // ✅ Collect all selected rows using existing checkboxes
+  const selectedRows = [];
+  $(".app-checkbox:checked").each(function () {
+    const row = $(this).closest("tr");
+    const rowData = table.row(row).data();
+
+    // Assuming DataTable columns: [checkbox, job_number, ar_name, ...]
+    const jobNumber = rowData.job_number || rowData[1];
+    const arName = rowData.ar_name || rowData[2];
+    const pendingDays = rowData.days_due || rowData[5];
+
+    selectedRows.push({
+      job_number: jobNumber,
+      ar_name: arName,
+      pendindays: pendingDays,
+    });
+  });
+
+  // ✅ If nothing selected, show professional alert and stop
+  if (selectedRows.length === 0) {
+    Swal.fire({
+      icon: "warning",
+      title: "No Applications Selected",
+      text: "Please select at least one application before sending a message.",
+      confirmButtonColor: "#0d6efd",
+      confirmButtonText: "OK",
+    });
+    return;
+  }
+
+  // ✅ Get staff details
+  const staff = $(this).data("receiver_name");
+  const staffid = $(this).data("officer_id");
+
+
+  //  data-receiver_name="${StaffName}" 
+  //                data-officer_name="${StaffName}"
+  //                 data-receiver_name="${StaffName}"
+  //                 data-="${staffID}"> 
+
+  console.log(staff);
+
+  // ✅ Populate modal hidden fields
+  const sendMessageModal = $("#sendMessageModal");
+  sendMessageModal.find("#officer_id").val(staffid);
+  sendMessageModal.find("#officer_name").val(staff);
+  sendMessageModal.find("#job_numbers").val(JSON.stringify(selectedRows));
+
+
+
+  //  console.log(data);
+    
+        // Update modal title
+    const titleText = staff ? 
+        `Send Message to <span class="text-primary">${staff}</span>` : 
+        'Send Message';
+    sendMessageModal.find("#modalTitleText").html(titleText);
+    
+    // Update recipient info card
+    if (staff) {
+        sendMessageModal.find("#recipientNameDisplay").text(staff);
+    } else if (staff) {
+        sendMessageModal.find("#recipientNameDisplay").text(staff);
+    } else {
+        sendMessageModal.find("#recipientNameDisplay").text('Select a recipient');
+    }
+    
+    // Update recipient info
+    if (staffid) {
+        sendMessageModal.find("#recipientInfo").text(`ID: ${staffid}`);
+    } else {
+        sendMessageModal.find("#recipientInfo").text('No ID available');
+    }
+    
+    // Update job count badge
+    const jobCount = Array.isArray(selectedRows) ? selectedRows.length : 0;
+    sendMessageModal.find("#jobCountBadge").text(`${jobCount} ${jobCount === 1 ? 'job' : 'jobs'}`);
+    
+    // Reset form to clean state    
+    // Show the modal (Bootstrap 5)
+    // const bsModal = new bootstrap.Modal(modal);
+    // bsModal.show();
+
+
+
+  
+
+  // ✅ Build HTML table for selected applications
+  let selectedTable = `
+    <div class="alert alert-info shadow-sm">
+      <strong>Selected Applications (${selectedRows.length}):</strong>
+      <div class="table-responsive mt-2">
+        <table class="table table-sm table-bordered align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Job Number</th>
+              <th>Applicant Name</th>
+              <th>Pending Days</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${selectedRows
+              .map(
+                (item) => `
+              <tr>
+                <td><code>${item.job_number}</code></td>
+                <td>${item.ar_name}</td>
+                 <td>${item.pendindays}</td>
+              </tr>
+            `
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  // ✅ Replace previous list/table if reopening
+  sendMessageModal.find(".modal-body .alert-info").remove();
+  sendMessageModal.find(".rec-table").prepend(selectedTable);
+
+  // ✅ Update modal title and show
+  sendMessageModal
+    .find("#sendMessageModalLabel")
+    .html(`Send Message To <span class="text-primary">${staff}</span>`);
+
+  sendMessageModal.modal("show");
+
+
+    resetMessageForm();
+
+});
+
+//         data = {
+//   "request_type": $("#sendMessageModal").find("#request_type").val(),
+//   "officer_id": $("#sendMessageModal").find("#officer_id").val(),
+//   "officer_name": $("#sendMessageModal").find("#officer_name").val(),
+//   "job_numbers": $("#sendMessageModal").find("#job_numbers").val(),
+//   "message_type": $("#sendMessageModal").find("#message_type").val(),
+//   "message": $("#sendMessageModal").find("#message").val()
+// };
+
+
+
+//   $("#message-form").on("submit", function (event) {
+//   event.preventDefault();
+
+//   let form = $(this);
+//   let data = {
+//     "request_type": "send_compliance_focal_person_message",
+//     "officer_id": $("#sendMessageModal").find("#officer_id").val(),
+//     "officer_name": $("#sendMessageModal").find("#officer_name").val(),
+//     "job_numbers": $("#sendMessageModal").find("#job_numbers").val(),
+//     "message_type": $("#sendMessageModal").find("#message_type").val(),
+//     "message": $("#sendMessageModal").find("#message").val()
+//   };
+
+//   console.log(data);
+
+//   submitAjax(
+//     $(this).attr("action"),
+//     "send_compliance_focal_person_message",
+//     data,
+//     function () {
+//       form.trigger("reset");
+//       form.parents(".modal").modal("hide");
+//       alert("Message sent successfully.");
+//     },
+//     function () {
+//       alert("We were not able to send your message. Please contact IT support if issue persists.");
+//     }
+//   );
+// });
+
+
+$(document).on('submit', '#message-form', function(e) {
+    e.preventDefault();
+    
+    const form = $(this);
+    const officerId = form.find('#officer_id').val();
+    const officerName = form.find('#officer_name').val();
+    const jobNumbers = form.find('#job_numbers').val();
+    const messageType = form.find('input[name="message_type"]:checked').val();
+    const message = form.find('#message').val().trim();
+    
+    // Validation
+    if (!message) {
+        Swal.fire({
+            title: 'Message Required',
+            text: 'Please enter a message to send.',
+            icon: 'warning',
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#ffc107'
+        });
+        return false;
+    }
+    
+    if (!officerId) {
+        Swal.fire({
+            title: 'No Recipient',
+            text: 'No recipient selected for the message.',
+            icon: 'warning',
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#ffc107'
+        });
+        return false;
+    }
+    
+    // Parse job numbers
+    let jobNumbersArray;
+    try {
+        jobNumbersArray = JSON.parse(jobNumbers);
+    } catch (error) {
+        console.error('Error parsing job numbers:', error);
+        jobNumbersArray = [];
+    }
+    
+    if (jobNumbersArray.length === 0) {
+        Swal.fire({
+            title: 'No Applications',
+            text: 'No applications selected to send message for.',
+            icon: 'warning',
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#ffc107'
+        });
+        return false;
+    }
+    
+    // Prepare confirmation message
+    const jobCount = jobNumbersArray.length;
+    const confirmationMessage = `
+        <div class="text-start">
+            <p>You are about to send a <strong>${messageType}</strong> to:</p>
+            <ul class="mb-2">
+                <li><strong>${officerName}</strong></li>
+                <li><strong>${jobCount}</strong> application(s)</li>
+            </ul>
+            <div class="alert alert-light border small mt-3">
+                <i class="ri-information-line me-1"></i>
+                Message: "${message.substring(0, 100)}${message.length > 100 ? '...' : ''}"
+            </div>
+        </div>
+    `;
+    
+    // Show confirmation dialog
+    Swal.fire({
+        title: 'Send Message?',
+        html: confirmationMessage,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Send Message',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#0d6efd',
+        cancelButtonColor: '#6c757d',
+        reverseButtons: true,
+        showLoaderOnConfirm: true,
+        preConfirm: () => {
+            return new Promise((resolve, reject) => {
+                // const formData = form.serialize();
+
+                const formData = {
+                  "request_type": $("#sendMessageModal").find("#request_type").val(),
+                  "officer_id": officerId,
+                  "officer_name": officerName,
+                  "job_numbers" : jobNumbers,
+                  "message_type" : messageType,
+                  "message" : message
+                }
+                
+                $.ajax({
+                    type: "POST",
+                    url: "SendComplianceMessage",
+                    data: formData,
+                    dataType: 'json',
+                    success: function(response) {
+                        if (response && response.success !== false) {
+                            resolve(response);
+                        } else {
+                            reject(new Error(response?.message || 'Failed to send message'));
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        reject(new Error(`Server error: ${status}`));
+                    }
+                });
+            });
+        },
+        allowOutsideClick: () => !Swal.isLoading()
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Success handling
+            const response = result.value;
+            
+            Swal.fire({
+                title: 'Success!',
+                html: `
+                    <div class="text-center">
+                        <div class="mb-3">
+                            <i class="ri-checkbox-circle-line text-success" style="font-size: 4rem;"></i>
+                        </div>
+                        <h5 class="fw-semibold">Message Sent Successfully</h5>
+                        <p class="text-muted">
+                            Your ${messageType} has been sent to ${officerName}
+                        </p>
+                        ${response?.message_id ? `
+                        <div class="alert alert-light border small mt-3">
+                            <i class="ri-information-line me-1"></i>
+                            Reference ID: <strong>${response.message_id}</strong>
+                        </div>
+                        ` : ''}
+                    </div>
+                `,
+                icon: 'success',
+                confirmButtonText: 'Done',
+                confirmButtonColor: '#0d6efd',
+                timer: 4000,
+                timerProgressBar: true,
+                willClose: () => {
+                    // Close the modal after success
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('sendMessageModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+                    
+                    // Reset the form for next use
+                    resetMessageForm();
+                }
+            });
+            
+        } else if (result.dismiss === Swal.DismissReason.cancel) {
+            Swal.fire({
+                title: 'Cancelled',
+                text: 'Message was not sent.',
+                icon: 'info',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6c757d',
+                timer: 2000
+            });
+        }
+    }).catch((error) => {
+        // Error handling
+        console.error('Error sending message:', error);
+        
+        Swal.fire({
+            title: 'Sending Failed',
+            html: `
+                <div class="text-center">
+                    <div class="mb-3">
+                        <i class="ri-error-warning-line text-danger" style="font-size: 4rem;"></i>
+                    </div>
+                    <h5 class="fw-semibold">Unable to Send Message</h5>
+                    <p class="text-muted">
+                        ${error.message || 'An unexpected error occurred. Please try again.'}
+                    </p>
+                    <div class="mt-3">
+                        <button class="btn btn-outline-secondary me-2" onclick="Swal.close()">
+                            Close
+                        </button>
+                        <button class="btn btn-primary" onclick="retrySendMessage()">
+                            <i class="ri-refresh-line me-1"></i> Try Again
+                        </button>
+                    </div>
+                </div>
+            `,
+            icon: 'error',
+            showConfirmButton: false,
+            showCancelButton: false
+        });
+    });
+    
+    return false;
+});
+
+
+  
+  
+    $(".generate-applications-chart").on("submit", function (event) {
+      event.preventDefault();
+  
+      let chartType = $(this).serializeArray()[0].value;
+  
+      let modalBody = $(this).parents(".modal-content").find(".modal-body");
+  
+      let title = $(this).parents(".modal-content").find(".modal-title").text();
+
+      console.log(title);
+  
+      let tableData = modalBody.find("table").DataTable().rows().data().toArray();
+  
+      let data = tableData.reduce((groupedData, currentItem) => {
+        let foundIndex = groupedData.findIndex((currentValue) => {
+          return currentValue.name === currentItem.business_process_sub_name;
+        });
+  
+        if (foundIndex < 0) {
+          groupedData.push({
+            name: currentItem.business_process_sub_name,
+            total: 0,
+          });
+          foundIndex = groupedData.length - 1;
+        }
+  
+        groupedData[foundIndex] = {...groupedData[foundIndex],
+          total: groupedData[foundIndex].total + 1,
+        };
+  
+        return groupedData;
+      }, []);
+  
+      generateChart(modalBody, title, chartType, data);
+    });
+  
+    $(".generate-chart").on("submit", function (event) {
+      event.preventDefault();
+  
+      let chartType = $(this).serializeArray()[0].value;
+  
+      let modalBody = $(this).parents(".modal-content").find(".modal-body");
+  
+      let tablData = modalBody.find("table").DataTable().rows().data().toArray();
+
+    // Transform array format into object format
+    let tableData = tablData.map(row => ({
+      name: row[0],     // First column: Service Name
+      total: parseInt(row[1], 10) || 0,  // Second column: Count (convert to integer)
+      action: row[2]    // Third column: Action (HTML link)
+    }));
+
+    // console.log("Formatted Table Data:", formattedData); // Log formatted data to console
+
+      console.log(tableData);
+
+  
+      let title = $(this).parents(".modal-content").find(".modal-title").text();
+  
+      generateChart(modalBody, title, chartType, tableData);
+    });
+  
+    // $(document).on("click", ".showDivisionModal", function (event) {
+    //   event.preventDefault();
+  
+    //   let item = $(this);
+    //   let iconClass = item.data("icon");
+    //   let modal = $("#divisionModal");
+  
+    //   let title = item.data("title");
+  
+      
+    //   let date = item.data("date") ?? "";
+  
+    //   let url = item.data("url");
+  
+    //   let method = item.data("method");
+    //   let period = item.data("period");
+  
+    //   let by = item.data("by");
+  
+    //   let action =
+    //     method +
+    //     (period ? `_${period}` : "") +
+    //     (typeof by === "undefined" ? "" : `_${by}`);
+  
+    //   submitAjax(url, action, {}, function (data) {
+    //     divisionsNotFound = divisions.filter(function (division) {
+    //       return !data.apps_at_division.some(function (item) {
+    //         return item.division == division.division;
+    //       });
+    //     });
+  
+    //     let newColors = [...colors];
+  
+    //     divisionHtml = [...data.apps_at_division, ...divisionsNotFound].reduce(
+    //       function (sum, current) {
+    //         let selectedColorIndex = Math.floor(Math.random() * newColors.length);
+    //         let color = newColors[selectedColorIndex];
+    //         newColors.splice(selectedColorIndex, 1);
+  
+    //         let html = `<div class="col-xl-3 col-md-6 mb-4">
+    //               <div class="card border-left-${color} shadow ">
+    //                 <div class="card-body">
+    //                   <div class="row no-gutters align-items-center">
+    //                     <div class="col mr-2">
+    //                       <div class="text-xs font-weight-bold text-primary text-uppercase mb-1"> ${current.division}</div>
+    //                       <div class="h5 mb-0 font-weight-bold text-gray-800">${current.total}</div>
+    //                     </div>
+    //                     <div class="col-auto">
+    //                       <i class="fas fa-2x text-gray-300 ${iconClass}"></i>
+    //                     </div>
+    //                     <a href="#" data-method="${method}" data-period="${period}" data-by="service_type" data-url="${url}" data-type="${current.division}" data-title="${title}" data-date="${date}" class="showServiceTypeModal text-decoration-none stretched-link">
+    //           </a>
+    //                   </div>
+    //                 </div>
+    //               </div>
+    //             </div>`;
+  
+    //         return (sum += html);
+    //       },
+    //       ""
+    //     );
+  
+    //     modal.find(".modal-body > .row").html(divisionHtml);
+    //   });
+  
+    //   modal
+    //     .find("#divisionModalLabel")
+    //     .html(`${title} <span class="text-primary">${date}</span>`);
+  
+    //   modal.modal("show");
+    // });
+  
+$(document).on("click", ".showServiceTypeModal_apps_recieved", function (event) {
+  event.preventDefault();
+
+  $("#apps_recieved_year_modal").modal("show");
+
+  var Region_name = $(this).data("type");
+  var users_division = $(this).data("regdivision");
+  var regioncode = $(this).data("regcode");
+
+    let newdatestart = $('#startdate').val();
+    let  newdateend = $('#enddate').val();
+
+  $("#director_regional_code").val(regioncode);
+
+  var regional_code = $("#director_regional_code").val();
+
+  console.log(users_division, regioncode);
+
+
+  // Convert title to uppercase
+  var title =
+    (
+      Region_name +
+      "'S APPLICATIONS RECEIVED FROM " +
+      newdatestart +
+      " TO " +
+      newdateend
+    ).toUpperCase();
+
+  // Apply uppercase title to modal header
+  document.getElementById("divisionLabelRecievedYear").innerHTML = title;
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "director_report_dashboard_created_year_by_division",
+      region_id: regioncode,
+      division: users_division,
+      region_name: Region_name,
+      date_from: startDate,
+      date_to: endDate,
+    },
+    cache: false,
+    success: function (response) {
+      var json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division);
+
+      if (json_result.apps_at_division == "") {
+        console.log("No data found");
+      } else {
+        let dataSet10 = [];
+        let num10 = 0;
+
+        $("#apps_recieved_year_table").DataTable().clear().destroy();
+
+        for (let i = 0; i < json_result.apps_at_division.length; i++) {
+          let html = [];
+          num10 += 1;
+
+          let service_type = json_result.apps_at_division[i].service_type;
+          let total = json_result.apps_at_division[i].total;
+          let action = `
+            <a href="javascript:void(0)" data-id="${json_result.apps_at_division[i].service_type}"  
+               id="view_apps_recieved_year"  
+               class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+                <i class="fa fa-info-circle"></i> Details
+            </a>`;
+
+          html.push(service_type);
+          html.push(total);
+          html.push(action);
+
+          dataSet10.push(html);
+        }
+
+        // Initialize DataTable with uppercase export title
+    $('#apps_recieved_year_table').DataTable({
+  data: dataSet10,
+  order: [[1, 'desc']],   // column index 1 = Total
+  dom: 'Bfrtip',
+  lengthMenu: [
+    [10, 25, 50, -1],
+    ['10 rows', '25 rows', '50 rows', 'Show all']
+  ],
+  buttons: [
+    {
+      extend: 'copy',
+      title: title
+    },
+    {
+      extend: 'csv',
+      title: title
+    },
+    {
+      extend: 'excel',
+      title: title
+    },
+    {
+      extend: 'pdf',
+      title: title
+    },
+    {
+      extend: 'print',
+      text: 'Print',
+      title: '', // prevent default title
+      customize: function (win) {
+        $(win.document.body)
+          .prepend(
+            `<<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3><br>
+            <p style="text-align:center; ; font-weight:bold; margin-bottom:30px;">This report is generated using the Enterprise Land Information System</p>`
+          )
+          .css('font-size', '19px');
+
+        // Optional: make the table look cleaner when printed
+        $(win.document.body).find('table')
+          .addClass('compact')
+          .css('font-size', '19px')
+          .css('width', '100%');
+      }
+    },
+    // {
+    //   extend: 'colvis',
+    //   text: 'Show / Hide Columns'
+    // },
+    'pageLength'
+  ]
+}).draw();
+
+      }
+    },
+  });
+});
+
+
+
+
+  $(document).on('click', '#view_apps_recieved_year', function (e) {
+  e.preventDefault();
+
+  $("#applicationsModalRecievedYear").modal("show");
+
+  const regional_code = $('#director_regional_code').val();
+  const serviceItype = $(this).data('id');
+  lastServiceType = serviceItype; // ✅ store globally
+
+
+   let newdatestart = $('#startdate').val();
+    let  newdateend = $('#enddate').val();
+    let  status_filter = $('#status_filter').val();
+
+    console.log(serviceItype, status_filter);
+
+     $('#serviceSelect').val(serviceItype);
+    
+
+  // Title in uppercase
+ loadDivisionApps(lastServiceType, regional_code, newdatestart, newdateend, status_filter);
+
+
+
+});
+
+
+
+
+function loadDivisionApps(lastServiceType, regional_code, newdatestart, newdateend, status_filter) {
+
+
+
+
+  function escapeHtml(unsafe) {
+        if (typeof unsafe !== 'string') return unsafe;
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+
+
+
+  let statusLabel = "";
+  if (status_filter === "all" || !status_filter) {
+    statusLabel = "RECEIVED";
+  } else {
+    statusLabel = status_filter.toUpperCase(); // e.g., PENDING, COMPLETED, QUERIED
+  }
+
+  // 🏷️ Build title dynamically
+  const title = `${lastServiceType} APPLICATIONS ${statusLabel} BETWEEN ${newdatestart} AND ${newdateend}`.toUpperCase();
+
+  
+    // const title = (lastServiceType + " APPLICATIONS RECEIVED IN " + newdatestart +
+    //   " AND " +
+    //   newdateend).toUpperCase();
+
+  document.getElementById('applicationsModalLabelRecievedYear').innerHTML = title;
+
+  console.log(regional_code, lastServiceType);
+
+  $('#view_applications_year_by_service_type').DataTable().clear().destroy();
+  
+  
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_created_year_by_service_type',
+      region_id: regional_code,
+      service_type: lastServiceType,
+      date_from: startDate,
+      date_to: endDate,
+      status : status_filter
+    },
+    cache: false,
+    success: function (response) {
+      var json_result = JSON.parse(response);
+      console.log(json_result);
+
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      let dataSet11 = [];
+
+      for (let i = 0; i < json_result.apps_at_division.length; i++) {
+        let row = json_result.apps_at_division[i];
+
+         const action = `
+        <td class="text-end">
+					<div class="dropdown">
+						<a href="javascript:void(0);"
+						class="btn btn-icon btn-sm btn-primary border action-btn""
+						data-bs-toggle="dropdown"
+						data-bs-display="static"
+						aria-expanded="false">
+							<i class="ri-more-2-line"></i>
+						</a>
+
+						<ul class="dropdown-menu dropdown-menu-end table-dropdown" data-popper-placement="bottom-end">
+
+							<!-- Cabinet -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								data-bs-toggle="modal"
+								data-bs-target="#cabinetModal"
+								data-target-id="${escapeHtml(row.job_number || '')}">
+									<i class="ri-hard-drive-2-line me-2"></i>
+									Track
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+						
+					
+
+							<!-- Application Details (Form Submit) -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								onclick="viewApplicationDetails('${row.job_number}','${row.transaction_number}','${row.case_number}','${row.business_process_sub_name}')">
+									<i class="ri-information-line me-2"></i>
+									Application Details
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+							
+
+						</ul>
+					</div>
+				</td>`;
+
+        dataSet11.push([
+          row.job_number,
+          row.ar_name,
+          row.business_process_name,
+          row.created_date,
+          row.days_due,
+          row.due_date,
+          row.days_since_batched,
+          row.job_status,
+          action
+        ]);
+      }
+
+      // Initialize DataTable with export buttons
+      $('#view_applications_year_by_service_type').DataTable({
+        data: dataSet11,
+        dom: 'Bfrtip',
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        buttons: [
+          {
+            extend: 'copy',
+            title: title
+          },
+          {
+            extend: 'csv',
+            title: title
+          },
+          {
+            extend: 'excel',
+            title: title
+          },
+          {
+            extend: 'pdf',
+            title: title,
+            messageTop: 'This report is generated using the Enterprise Land Information System.'
+          },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '', // prevent default title
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(
+                  `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                   <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                   This report is generated using the Enterprise Land Information System</p>`
+                )
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // {
+          //   extend: 'colvis',
+          //   text: 'Show / Hide Columns'
+          // },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+  
+}
+
+
+$(document).on("change", "#status_filter", function () {
+  // ✅ Reuse last clicked service type
+  if (lastServiceType) {
+    const regional_code = $('#director_regional_code').val();
+    const newdatestart = $('#startdate').val();
+    const newdateend = $('#enddate').val();
+    const status_filter = $('#status_filter').val();
+
+    loadDivisionApps(lastServiceType, regional_code, newdatestart, newdateend, status_filter);
+  } else {
+    console.warn("No service type selected yet.");
+  }
+});
+
+
+$(document).on("click", ".showServiceTypeModal_apps_recieved_and_completed", function (event) {
+  event.preventDefault();
+
+  $("#apps_recieved_completed_year_modal").modal("show");
+
+  const Region_name = $(this).data("type");
+  const users_division = $(this).data("regdivision");
+  const regioncode = $(this).data("regcode");
+
+  $("#director_regional_code").val(regioncode);
+
+  const regional_code = $("#director_regional_code").val();
+
+   let newdatestart = $('#startdate').val();
+    let  newdateend = $('#enddate').val();
+
+
+  console.log(users_division, regioncode);
+
+  // UPPERCASE TITLE
+  const title = (
+    Region_name +
+    "'S APPLICATIONS RECEIVED AND COMPLETED FRO " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  document.getElementById("divisionLabelRecievedCompletedYear").innerHTML = title;
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "director_report_dashboard_created_completed_year_by_division",
+      region_id: regional_code.trim(),
+      division: users_division,
+      date_from: startDate,
+      date_to: endDate,
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division);
+
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      let dataSet12 = [];
+
+      for (let i = 0; i < json_result.apps_at_division.length; i++) {
+        const row = json_result.apps_at_division[i];
+
+        const action = `
+          <a href="javascript:void(0)" data-id="${row.service_type}"  
+             id="view_apps_recieved_completed_year"  
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+              <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet12.push([row.service_type, row.total, action]);
+      }
+
+      // Reinitialize DataTable
+      $("#apps_recieved_completed_year_table").DataTable().clear().destroy();
+
+      $("#apps_recieved_completed_year_table")
+        .DataTable({
+          data: dataSet12,
+          dom: "Bfrtip",
+          order: [[1, 'desc']],   // column index 1 = Total
+          lengthMenu: [
+            [10, 25, 50, -1],
+            ["10 rows", "25 rows", "50 rows", "Show all"],
+          ],
+          buttons: [
+            {
+              extend: "copy",
+              title: title,
+            },
+            {
+              extend: "csv",
+              title: title,
+            },
+            {
+              extend: "excel",
+              title: title,
+            },
+            {
+              extend: "pdf",
+              title: title,
+              messageTop: "This report is generated using the Enterprise Land Information System.",
+            },
+            {
+              extend: "print",
+              text: "Print",
+              title: "",
+              customize: function (win) {
+                $(win.document.body)
+                  .prepend(
+                    `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                     <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                     This report is generated using the Enterprise Land Information System</p>`
+                  )
+                  .css("font-size", "19px");
+
+                $(win.document.body)
+                  .find("table")
+                  .addClass("compact")
+                  .css("font-size", "19px")
+                  .css("width", "100%");
+              },
+            },
+            // {
+            //   extend: "colvis",
+            //   text: "Show / Hide Columns",
+            // },
+            "pageLength",
+          ],
+        })
+        .draw();
+    },
+  });
+});
+
+
+
+
+ function escapeHtml(unsafe) {
+        if (typeof unsafe !== 'string') return unsafe;
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+
+
+
+
+$(document).on('click', '#view_apps_recieved_completed_year', function (e) {
+  e.preventDefault();
+
+  $("#applicationsModalRecievedCompletedYear").modal("show");
+
+  const regional_code = $('#director_regional_code').val();
+  const service_type = $(this).data('id');
+
+   let newdatestart = $('#startdate').val();
+    let  newdateend = $('#enddate').val();
+
+  // Title in uppercase
+  const title = (
+    service_type +
+    " APPLICATIONS RECEIVED AND COMPLETED FROM " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  document.getElementById('applicationsModalLabelRecievedCompletedYear').innerHTML = title;
+
+  $('#view_applications_created_completed_year_by_service_type').DataTable().clear().destroy();
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_created_completed_year_by_service_typ',
+      region_id: regional_code,
+      service_type: service_type,
+      date_from: startDate,
+      date_to: endDate
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result);
+
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      let dataSet13 = [];
+
+      for (let i = 0; i < json_result.apps_at_division.length; i++) {
+        const row = json_result.apps_at_division[i];
+
+         const action = `
+        <td class="text-end">
+					<div class="dropdown">
+						<a href="javascript:void(0);"
+						class="btn btn-icon btn-sm btn-primary border action-btn""
+						data-bs-toggle="dropdown"
+						data-bs-display="static"
+						aria-expanded="false">
+							<i class="ri-more-2-line"></i>
+						</a>
+
+						<ul class="dropdown-menu dropdown-menu-end table-dropdown" data-popper-placement="bottom-end">
+
+							<!-- Cabinet -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								data-bs-toggle="modal"
+								data-bs-target="#cabinetModal"
+								data-target-id="${escapeHtml(row.job_number || '')}">
+									<i class="ri-hard-drive-2-line me-2"></i>
+									Track
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+						
+					
+
+							<!-- Application Details (Form Submit) -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								onclick="viewApplicationDetails('${row.job_number}','${row.transaction_number}','${row.case_number}','${row.business_process_sub_name}')">
+									<i class="ri-information-line me-2"></i>
+									Application Details
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+							
+
+						</ul>
+					</div>
+				</td>`;
+
+        dataSet13.push([
+          row.job_number,
+          row.ar_name,
+          row.business_process_name,
+          row.created_date,
+          row.completed_date,
+          row.turnaround_days,
+          action
+        ]);
+      }
+
+      // Initialize DataTable with export buttons
+      $('#view_applications_created_completed_year_by_service_type').DataTable({
+        data: dataSet13,
+        dom: 'Bfrtip',
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        buttons: [
+          {
+            extend: 'copy',
+            title: title
+          },
+          {
+            extend: 'csv',
+            title: title
+          },
+          {
+            extend: 'excel',
+            title: title
+          },
+          {
+            extend: 'pdf',
+            title: title,
+            messageTop: 'This report is generated using the Enterprise Land Information System.'
+          },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '',
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(
+                  `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                   <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                   This report is generated using the Enterprise Land Information System</p>`
+                )
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // {
+          //   extend: 'colvis',
+          //   text: 'Show / Hide Columns'
+          // },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+});
+
+
+
+ $(document).on("click", ".showServiceTypeModal_apps_completed", function (event) {
+  event.preventDefault();
+
+  // Show modal
+  $("#apps_completed_year_modal").modal("show");
+
+  // Get values from data attributes
+  const Region_name = $(this).data("type");
+  const users_division = $(this).data("regdivision");
+  const regioncode = $(this).data("regcode");
+
+  // Store regional code in hidden input
+  $("#director_regional_code").val(regioncode);
+  const regional_code = $("#director_regional_code").val();
+
+   let newdatestart = $('#startdate').val();
+    let  newdateend = $('#enddate').val();
+
+
+  console.log(users_division, regioncode);
+
+  // UPPERCASE title
+  const title = (
+    Region_name +
+    "'S APPLICATIONS COMPLETED FROM " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  // Set modal title
+  document.getElementById("divisionLabelCompletedYear1").innerHTML = title;
+
+  // AJAX request
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "director_report_dashboard_completed_year_by_division",
+      region_id: regional_code.trim(),
+      division: users_division,
+      region_name: Region_name,
+      date_from: startDate,
+      date_to: endDate,
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division);
+
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      let dataSet14 = [];
+
+      for (let i = 0; i < json_result.apps_at_division.length; i++) {
+        const row = json_result.apps_at_division[i];
+
+        const action = `
+          <a href="javascript:void(0)" data-id="${row.service_type}"  
+             id="view_apps_completed_year"  
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+              <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet14.push([row.service_type, row.total, action]);
+      }
+
+      // Reinitialize DataTable with export buttons and consistent formatting
+      $("#apps_completed_year_table").DataTable().clear().destroy();
+
+      $("#apps_completed_year_table")
+        .DataTable({
+          data: dataSet14,
+            order: [[1, 'desc']],   // column index 1 = Total
+          dom: "Bfrtip",
+          lengthMenu: [
+            [10, 25, 50, -1],
+            ["10 rows", "25 rows", "50 rows", "Show all"],
+          ],
+          buttons: [
+            {
+              extend: "copy",
+              title: title,
+            },
+            {
+              extend: "csv",
+              title: title,
+            },
+            {
+              extend: "excel",
+              title: title,
+            },
+            {
+              extend: "pdf",
+              title: title,
+              messageTop:
+                "This report is generated using the Enterprise Land Information System.",
+            },
+            {
+              extend: "print",
+              text: "Print",
+              title: "",
+              customize: function (win) {
+                $(win.document.body)
+                  .prepend(
+                    `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                     <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                     This report is generated using the Enterprise Land Information System</p>`
+                  )
+                  .css("font-size", "19px");
+
+                $(win.document.body)
+                  .find("table")
+                  .addClass("compact")
+                  .css("font-size", "19px")
+                  .css("width", "100%");
+              },
+            },
+            // {
+            //   extend: "colvis",
+            //   text: "Show / Hide Columns",
+            // },
+            "pageLength",
+          ],
+        })
+        .draw();
+    },
+  });
+});
+
+
+  
+  
+ $(document).on('click', '#view_apps_completed_year', function (e) {
+  e.preventDefault();
+
+  $("#applicationsModalCompletedYear").modal("show");
+
+  const regional_code = $('#director_regional_code').val();
+  const service_type = $(this).data('id');
+
+   let newdatestart = $('#startdate').val();
+    let  newdateend = $('#enddate').val();
+
+  // Title with date range in uppercase
+  const title = (
+    service_type +
+    " APPLICATIONS COMPLETED FROM " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  document.getElementById('applicationsModalLabelCompletedYear').innerHTML = title;
+
+  $('#view_applications_completed_year_by_service_type').DataTable().clear().destroy();
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_completed_year_by_service_type',
+      region_id: regional_code,
+      service_type: service_type,
+      date_from: startDate,
+      date_to: endDate
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result);
+
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      let dataSet13 = [];
+
+      for (let i = 0; i < json_result.apps_at_division.length; i++) {
+        const row = json_result.apps_at_division[i];
+
+        const action = `
+        <td class="text-end">
+					<div class="dropdown">
+						<a href="javascript:void(0);"
+						class="btn btn-icon btn-sm btn-primary border action-btn""
+						data-bs-toggle="dropdown"
+						data-bs-display="static"
+						aria-expanded="false">
+							<i class="ri-more-2-line"></i>
+						</a>
+
+						<ul class="dropdown-menu dropdown-menu-end table-dropdown" data-popper-placement="bottom-end">
+
+							<!-- Cabinet -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								data-bs-toggle="modal"
+								data-bs-target="#cabinetModal"
+								data-target-id="${escapeHtml(row.job_number || '')}">
+									<i class="ri-hard-drive-2-line me-2"></i>
+									Track
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+						
+					
+
+							<!-- Application Details (Form Submit) -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								onclick="viewApplicationDetails('${row.job_number}','${row.transaction_number}','${row.case_number}','${row.business_process_sub_name}')">
+									<i class="ri-information-line me-2"></i>
+									Application Details
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+							
+
+						</ul>
+					</div>
+				</td>`;
+
+        dataSet13.push([
+          row.job_number,
+          row.ar_name,
+          row.business_process_name,
+          row.created_date,
+          row.completed_date,
+          row.turnaround_days,
+          action
+        ]);
+      }
+
+      // Initialize DataTable with export buttons
+      $('#view_applications_completed_year_by_service_type').DataTable({
+        data: dataSet13,
+        dom: 'Bfrtip',
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        buttons: [
+          {
+            extend: 'copy',
+            title: title
+          },
+          {
+            extend: 'csv',
+            title: title
+          },
+          {
+            extend: 'excel',
+            title: title
+          },
+          {
+            extend: 'pdf',
+            title: title,
+            messageTop: 'This report is generated using the Enterprise Land Information System.'
+          },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '',
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(
+                  `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                   <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                   This report is generated using the Enterprise Land Information System</p>`
+                )
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // {
+          //   extend: 'colvis',
+          //   text: 'Show / Hide Columns'
+          // },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+});
+     
+
+
+
+
+//     $(document).on("click", ".showUnitModal", function (event) {
+//       event.preventDefault();
+  
+//       let item = $(this);
+//       let modal = $("#unitModal");
+//       let type = item.data("type") ?? "";
+  
+//       // let title = item.data("title");
+      
+//       // console.log(title);
+  
+//       let title = (item.data("title") === "Applications With Divisions") ? "Applications" : item.data("title");
+  
+  
+      
+//       let date = item.data("date") ?? "";
+  
+//       let url = item.data("url");
+  
+//       let method = item.data("method");
+//       let period = item.data("period");
+//       let by = item.data("by");
+  
+//       let action =
+//         method +
+//         (typeof period === "undefined" ? "" : `_${period}`) +
+//         (typeof by === "undefined" ? "" : `_${by}`) +
+//         "_units";
+  
+//       submitAjax(url, action, { division: type }, function (data) {
+//         let unitsData = data.apps_at_division_unit.map(function (item) {
+//           return {
+//             name: item.unit,
+//             total: item.total,
+//             action: `<a href="#" 
+//               class="modalButton showOfficerModal text-decoration-none"
+//               data-method="${method}" 
+//               data-count="${item.total}" 
+//             ${typeof period === "undefined" ? "" : `data-period="${period}"`}
+//             data-url="${url}"
+//             ${typeof by === "undefined" ? "" : `data-by="${by}"`}
+//             data-type="${item.unit}"
+//             data-title="${title}" 
+//             data-date="${date}" 
+//               data-unit-id="${item.unit_id}"
+//             data-division="${type}"
+//           >View</a>`,
+//           };
+//         });
+  
+//         modal
+//           .find(".modal-body table")
+//           .DataTable({ destroy: true, responsive: true, data: unitsData });
+//       });
+  
+//       modal
+//         .find("#unitModalLabel")
+//         .html(
+//           `${type}'s Units ${title} <span class="text-primary">${date}</span>`
+//         );
+  
+//       modal.find(".modal-body table").DataTable();
+  
+//       modal.modal("show");
+//     });
+  
+//     $(document).on("click", ".showOfficerModal", function (event) {
+//       event.preventDefault();
+  
+//       let item = $(this);
+//       let modal = $("#officerModal");
+//       let type = item.data("type") ?? "";
+  
+//       let title = item.data("title");
+  
+//       //  console.log(title);
+  
+//       let date = item.data("date") ?? "";
+  
+//       let url = item.data("url");
+  
+//       let method = item.data("method");
+//       let period = item.data("period");
+//       let by = item.data("by");
+  
+//       let division = item.data("division");
+//       let unit = item.data("unit-id");
+//       let count = item.data("count");
+  
+//       let action =
+//         method +
+//         (typeof period === "undefined" ? "" : `_${period}`) +
+//         (typeof by === "undefined" ? "" : `_${by}`) +
+//         "_officers";
+  
+//       submitAjax(url, action, { division, unit }, function (data) {
+//         let officersData = data.apps_at_unit.map(function (item) {
+//           return {
+//             name: item.staff,
+//             total: item.total,
+//             action: `<a href="#" 
+//               class="modalButton showApplicationsModal text-decoration-none"
+//               data-staff='${JSON.stringify(item)}'
+//               data-method="${method}" 
+//             ${typeof period === "undefined" ? "" : `data-period="${period}"`}
+//             data-url="${url}"
+//             ${typeof by === "undefined" ? "" : `data-by="${by}"`}
+//             data-type="${item.staff}'s"
+//             data-title="${title}" 
+//             data-date="${date}"
+//             data-key="staff"
+//             data-value="${item.staff_id}"
+//           >View</a>`,
+//           };
+//         });
+//         // let unassigned =
+//         //     count -
+//         //     data.apps_at_unit.reduce(function (sum, current) {
+//         //       return (sum += current.total);
+//         //     }, 0);
+  
+//         //   officersData = [
+//         //     {
+//         //       name: "UNASSIGNED",
+//         //       total: unassigned,
+//         //       action: `<a href="#" 
+//         //        class="modalButton showApplicationsModal text-decoration-none"
+//         //        data-method="${method}" 
+//         //      ${typeof period === "undefined" ? "" : `data-period="${period}"`}
+//         //      data-url="${url}"
+//         //      ${typeof by === "undefined" ? "" : `data-by="${by}"`}
+//         //      data-type="Unassigned"
+//         //      data-title="${title}" 
+//         //      data-date="${date}"
+//         //      data-key="staff"
+//         //      data-value="${unit}"
+//         //    >View</a>`,
+//         //     },
+//         //     ...officersData,
+//         //   ];
+          
+//         modal
+//           .find(".modal-body table")
+//           .DataTable({ destroy: true, responsive: true, data: officersData });
+//       });
+  
+//       modal
+//         .find("#officerModalLabel")
+//         .html(
+//           `${type}'s Officers ${title} <span class="text-primary">${date}</span>`
+//         );
+  
+//       modal.find(".modal-body table").DataTable();
+  
+//       modal.modal("show");
+//     });
+  
+//     $(document).on("click", ".showApplicationsModal", function (event) {
+//       event.preventDefault();
+  
+//       let item = $(this);
+//       // let modal = $("#applicationsModal");
+//       let type = item.data("type") ?? "";
+  
+//       let title = item.data("title");
+//       console.log(title);
+  
+//       // let modal = title !== "Applications With Divisions" ? $("#applicationsModal") : $("#completedapplicationsModal");
+  
+//       // let modal = (title === "Applications Completed" || title === "Applications Received and Completed") ? $("#completedapplicationsModal") : $("#applicationsModal");
+  
+  
+//       let modal = (title === "Applications Completed" || title === "Applications Received and Completed") ? $("#completedapplicationsModal") : ((title === "Applications" || title === "Applications Past Due Date") ? $("#new_modal") : $("#applicationsModal"));
+      
+  
+//       let date = item.data("date") ?? "";
+  
+//       let url = item.data("url");
+  
+//       let data = {};
+//       data[item.data("key")] = item.data("value");
+  
+//       let method = item.data("method");
+//       let period = item.data("period");
+//       let by = item.data("by");
+  
+//       let staff = item.data("staff");
+     
+//       let action =
+//         method +
+//         (period ? `_${period}` : "") +
+//         (typeof by === "undefined" ? "" : `_${by}`) +
+//         "_applications";
+  
+//       submitAjax(url, action, data, function (data) {
+        
+        
+//         data = data.apps_with_staff || data.apps_at_division || [];
+        
+//         let applicationsData = data.map(function (item) {
+//           let sendMessageAction =
+//             typeof staff === "undefined"
+//               ? ""
+//               : `<a data-job-number="${
+//                   item.job_number
+//                 }" data-staff='${JSON.stringify(
+//                   staff
+//                 )}' class="dropdown-item sendMessage" href="#">Send Message</a>`;
+          
+//           let page_name_title = $("#page_name").text();
+  
+//           return {
+//             ...item,
+//             action: `<div class="btn-group" role="group">
+//               <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+//                 Actions
+//               </button>
+//               <div class="dropdown-menu">
+//               <form class="d-inline" target="_blank" action="front_office_view_application" method="post">
+//                 <input type="hidden" name="case_number" id="case_number" value="${item.transaction_number}">
+//                 <input type="hidden" name="search_text" id="search_text" value="${item.case_number}">
+//                 <input type="hidden" name="job_number" id="job_number" value="${item.job_number}">
+//                 <input type="hidden" name="business_process_sub_name" id="business_process_sub_name" value="${item.business_process_sub_name}">
+//                 <button type="submit" name="save" class="dropdown-item" >View</button>
+//               </form>
+//                 ${sendMessageAction}
+                
+//                 ${page_name_title ==="unit_case_management" ?`
+//                 <a href="#" class="dropdown-item "  data-job_number="${item.job_number}" data-ar_name="${item.ar_name}"
+//           data-business_process_sub_name="${item.business_process_sub_name}"  data-toggle="modal" data-target="#askForPurposeOfBatching">
+//           Add to Batch List
+//           </a>`
+            
+//                 : ""}
+                
+                
+                
+//               </div>
+//             </div>`,
+//           };
+//         });
+  
+//         modal
+//           .find(".modal-body table")
+//           .DataTable({ destroy: true, responsive: true, data: applicationsData });
+//       });
+  
+//       modal
+//         .find("#applicationsModalLabel")
+//         .html(`${type} ${title} <span class="text-primary">${date}</span>`);
+  
+//       let sendMessageAction =
+//         typeof staff === "undefined"
+//           ? ""
+//           : `<button data-staff='${JSON.stringify(
+//               staff
+//             )}' class="sendMessage btn btn-primary ml-auto" type="button">Send Message</button>`;
+  
+//       $(sendMessageAction).insertAfter(modal.find("#applicationsModalLabel"));
+  
+//       modal.find(".modal-body table").DataTable();
+  
+//       modal.modal("show");
+//     });
+  
+    let chart;
+  
+    $(".clear-chart").on("click", function () {
+      $(this).parents(".generate-chart").trigger("reset");
+  
+      echarts.init($(this).parents(".modal").find(".chart")[0]).dispose();
+  
+      $(this).parents(".modal").find(".chart").width(0).height(0);
+    });
+  
+    $(".modal").on("shown.bs.modal", function () {
+      $(this).attr("data-position", $(".modal:visible").length);
+  
+  $('.modal').each(function(){
+    if ($(this).find(".chart").length > 0) {
+      echarts.init($(this).find(".chart")[0]).dispose();
+  
+        $(this).find(".chart").width(0).height(0);
+  
+      $(this).find(".generate-chart").trigger("reset");
+    
+        $(this).find(".generate-applications-chart").trigger("reset");
+    }
+  });
+    });
+  
+    $(".modal").on("hidden.bs.modal", function () {
+      $(this).attr("data-position", 0);
+  
+      if ($(this).find(".chart").length > 0) {
+        echarts.init($(this).find(".chart")[0]).dispose();
+  
+        $(this).find(".chart").width(0).height(0);
+  
+        $(this).find(".generate-chart").trigger("reset");
+  
+        $(this).find(".generate-applications-chart").trigger("reset");
+      }
+  
+      if ($(this).find("table").length > 0) {
+        $(this).find("table").DataTable().clear().draw();
+        $(this).find("table").DataTable().destroy();
+      }
+  
+      if (
+        $(`.modal:visible[data-position=${$(".modal:visible").length}]`).length >
+        0
+      ) {
+        $("body").addClass("modal-open");
+      }
+  
+      if (
+        !$("#applicationsModal").is(":visible") &&
+        $(".sendMessage").length > 0
+      ) {
+        $(".sendMessage").remove();
+      }
+    });
+  
+    function generateChart(modalBody, title, type, tableData) {
+      let data = null;
+      let labels = null;
+  
+      switch (type) {
+        case "pie":
+        case "doughnut":
+          data = tableData.map(({ name, total }) => {
+            return { name, value: total };
+          });
+          break;
+        case "bar":
+          (data = tableData.map((item) => item.total)),
+            (labels = tableData.map((item) => item.name));
+          break;
+        default:
+          alert("Please select one option.");
+          break;
+      }
+  
+      if (!type) {
+        return;
+      }
+  
+      if (chart) {
+        chart.dispose();
+  
+        $(chart.getDom()).width(0).height(0);
+      }
+  
+      let height = type === "pie" || type === "doughnut" ? 400 : "700px";
+  
+      modalBody.find(".chart").width("100%").height(height);
+  
+      chart = echarts.init(modalBody.find(".chart")[0]);
+  
+      let options = {
+        title: {
+          text: title,
+        },
+        toolbox: {
+          right: "5%",
+          feature: {
+            saveAsImage: {},
+          },
+        },
+      };
+  
+      switch (type) {
+        case "pie":
+          options = { ...options, ...getPieOptions(data, "70%") };
+          break;
+        case "doughnut":
+          options = { ...options, ...getPieOptions(data, ["40%", "70%"]) };
+          break;
+        case "bar":
+          options = { ...options, ...getBarOptions(labels, data) };
+          break;
+      }
+  
+      chart.setOption(options);
+    }
+  
+    function getPieOptions(data, radius) {
+      return {
+        tooltip: {
+          trigger: "item",
+        },
+        series: [
+          {
+            type: "pie",
+            radius,
+            data: data,
+            emphasis: {
+              itemStyle: {
+                shadowBlur: 10,
+                shadowOffsetX: 0,
+                shadowColor: "rgba(0, 0, 0, 0.5)",
+              },
+            },
+          },
+        ],
+      };
+    }
+  
+    function getBarOptions(labels, data) {
+      return {
+        tooltip: {
+          trigger: "axis",
+          axisPointer: {
+            type: "shadow",
+          },
+        },
+        grid: {
+          left: 0,
+          right: 0,
+          top: 80,
+          bottom: 100,
+          containLabel: true,
+          tooltip: {
+            trigger: "axis",
+            axisPointer: {
+              type: "shadow",
+              label: {
+                show: true,
+                formatter: function (params) {
+                  return params.value.replace("\n", "");
+                },
+              },
+            },
+          },
+        },
+        legend: {
+          data: labels,
+        },
+        xAxis: {
+          type: "category",
+          data: labels,
+          axisLabel: {
+            showMinLabel: true,
+            showMaxLabel: true,
+            interval: 0,
+            rotate: 90,
+            formatter: function (value) {
+              return value
+                .split(" ")
+                .reduce((previousValue, currentValue, currentIndex) => {
+                  if (currentIndex && (currentIndex + 1) % 2 === 1) {
+                    return [...previousValue, "\n", currentValue];
+                  }
+  
+                  return [...previousValue, currentValue];
+                }, [])
+                .slice(0, 10)
+                .reduce((previousValue, currentValue, currentIndex) => {
+                  if (currentIndex === 9) {
+                    currentValue = `${currentValue}...`;
+                  }
+  
+                  return [...previousValue, currentValue];
+                }, [])
+                .join(" ");
+            },
+          },
+        },
+        yAxis: {
+          type: "value",
+        },
+        series: [
+          {
+            data,
+            barWidth: "60%",
+            type: "bar",
+          },
+        ],
+      };
+    }
+    //console.log("pagen complaince: "+$("#page_name").text() )
+    
+    
+
+  //   $('#sendMessageModal_FocalCompliance').on('show.bs.modal',function(event) {
+  //     $("#sendMessageModal_FocalCompliance #officer_name").val($(event.relatedTarget).data('staff_name'));	
+  //     $("#sendMessageModal_FocalCompliance #job_numbers").val('[{"job_number":"'+$(event.relatedTarget).data('job_number')+'"}]');
+  //     $("#sendMessageModal_FocalCompliance #focal_officer_id").val($(event.relatedTarget).data('staff_id'));
+  //      //$("#sendMessageModal #sendMessageModalLabel").val('Send Message To '+$(event.relatedTarget).data('receiver_name'));	
+  //     document.getElementById('sendMessageModalLabel_FocalCompliance').innerHTML = 'Send Message To <span class="text-primary">'+$(event.relatedTarget).data('staff_name')+'</span>'
+  //     // $("#sendMessageModal #e_lawyer_address").val($(event.relatedTarget).data('lawyer_address'));
+  //     // $("#sendMessageModal #e_lawyer_chamber").val($(event.relatedTarget).data('lawyer_chamber'));
+  // });
+  
+
+  
+
+
+$('#sendMessageModal_FocalCompliance').on('show.bs.modal', function (event) {
+  const button = $(event.relatedTarget);
+  const staffName = button.data('staff_name');
+  const staffId = button.data('staff_id');
+  const jobNumber = button.data('job_number');
+
+  // Set modal fields
+  $("#sendMessageModal_FocalCompliance #officer_name").val(staffName);
+  $("#sendMessageModal_FocalCompliance #job_numbers").val('[{"job_number":"' + jobNumber + '"}]');
+  $("#sendMessageModal_FocalCompliance #focal_officer_id").val(staffId);
+
+  document.getElementById('sendMessageModalLabel_FocalCompliance').innerHTML =
+    'Send Message To <span class="text-primary">' + staffName + '</span>';
+
+  // Fetch previous messages
+  fetchPreviousNotices(jobNumber);
+});
+
+function fetchPreviousNotices(jobNumber) {
+  // Show loading message
+  $("#messagesContainer").html('<p class="text-muted mb-0">Loading previous messages...</p>');
+
+  $.ajax({
+    url: "director_dashboard", // your backend endpoint
+    type: "POST",
+    data: { 
+      request_type: 'select_application_notices_by_job_number',
+      job_number: jobNumber // ✅ send job number directly
+    },
+    success: function (response) {
+      console.log(response);
+
+    var json_response = JSON.parse(response);
+
+      if (json_response.success && json_response.cabinet_tracking && json_response.cabinet_tracking.length > 0) {
+        let html = `<ul class="list-group">`;
+        json_response.cabinet_tracking.forEach(msg => {
+  const typeColor =
+    msg.notice_type.toLowerCase() === "query"
+      ? "bg-warning text-dark"
+      : msg.notice_type.toLowerCase() === "warning"
+      ? "bg-danger text-white"
+      : "bg-secondary text-white";
+
+  html += `
+    <li class="list-group-item border-0 shadow-sm mb-3 rounded-3 p-3" style="background: #f9fafb;">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <span class="badge ${typeColor} px-3 py-1 rounded-pill text-capitalize">${msg.notice_type}</span>
+        <small class="text-muted fw-light">
+          <i class="far fa-clock me-1"></i>${new Date(msg.created_date).toLocaleString()}
+        </small>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center">
+        <p class="mb-2 text-dark flex-grow-1" style="font-size: 0.95rem;">
+          ${msg.details}
+        </p>
+        <button class="btn btn-sm btn-outline-primary ms-2 view-replies-btn"
+        data-notice-id="${msg.notice_id}"
+        title="View Replies">
+  <i class="fas fa-comments"></i>
+</button>
+      </div>
+
+      <div class="text-muted small">
+        <i class="fas fa-user-circle me-1 text-secondary"></i>
+        <b>${msg.created_by}</b> → <span>${msg.receiver_name}</span>
+      </div>
+    </li>
+  `;
+});
+
+
+        html += `</ul>`;
+        $("#messagesContainer").html(html);
+      } else {
+        $("#messagesContainer").html('<p class="text-muted mb-0">No previous messages found for this application.</p>');
+      }
+    },
+    error: function () {
+      $("#messagesContainer").html('<p class="text-danger mb-0">Failed to load previous messages.</p>');
+    }
+  });
+}
+
+
+
+
+// use the container that holds the messages (example: #messagesContainer)
+$('#messagesContainer').on('click', '.view-replies-btn', function () {
+  const noticeId = $(this).data('notice-id');
+
+  $('#repliesModal').modal('show');
+  $('#repliesModalBody').html('<p class="text-muted text-center my-3"><i class="fas fa-spinner fa-spin"></i> Loading replies...</p>');
+
+  $.ajax({
+    url: "director_dashboard",
+    type: "POST",
+    data: { 
+      request_type: 'select_application_notice_replies',
+      notice_id: noticeId
+    },
+    success: function (response) {
+      const json_response = JSON.parse(response);
+      console.log(json_response);
+
+      if (json_response.success && json_response.notice_info && json_response.notice_info.length > 0) {
+        let repliesHtml = `
+          <div class="list-group list-group-flush">
+        `;
+
+        json_response.notice_info.forEach(reply => {
+          repliesHtml += `
+            <div class="list-group-item border-0 border-bottom py-3">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <h6 class="fw-semibold mb-0 text-primary">
+                  <i class="fas fa-user-circle me-1 text-secondary"></i> ${reply.created_by}
+                </h6>
+                <small class="text-muted">
+                  <i class="far fa-clock me-1"></i> ${new Date(reply.created_date).toLocaleString()}
+                </small>
+              </div>
+              <p class="mb-0 text-dark" style="font-size: 0.95rem; line-height: 1.4;">
+                ${reply.reply_details}
+              </p>
+            </div>
+          `;
+        });
+
+        repliesHtml += `</div>`;
+        $('#repliesModalBody').html(repliesHtml);
+      } else {
+        $('#repliesModalBody').html(`
+          <div class="text-center text-muted py-4">
+            <i class="fas fa-comments fa-2x mb-2"></i>
+            <p class="mb-0">No replies found for this notice.</p>
+          </div>
+        `);
+      }
+    },
+    error: function () {
+      $('#repliesModalBody').html('<p class="text-danger text-center mb-0 py-3">Failed to load replies.</p>');
+    }
+  });
+});
+
+
+
+
+$("#message-form_focal_complaince").on("submit", function (event) {
+  event.preventDefault();
+
+  let form = $(this);
+
+  // Gather form data
+  let data = {
+    "request_type": $("#sendMessageModal_FocalCompliance").find("#request_type").val(),
+    "officer_id": $("#sendMessageModal_FocalCompliance").find("#focal_officer_id").val(),
+    "officer_name": $("#sendMessageModal_FocalCompliance").find("#officer_name").val(),
+    "job_numbers": $("#sendMessageModal_FocalCompliance").find("#job_numbers").val(),
+    "message_type": $("#sendMessageModal_FocalCompliance").find("#message_type").val(),
+    "message": $("#sendMessageModal_FocalCompliance").find("#message").val()
+  };
+
+  // Validate — ensure at least one job number is selected
+  if (!data.job_numbers || data.job_numbers.trim() === "") {
+    Swal.fire({
+      icon: "warning",
+      title: "No Applications Selected",
+      text: "Please select at least one application before sending a message.",
+      confirmButtonColor: "#0d6efd",
+      confirmButtonText: "OK",
+    });
+    return;
+  }
+
+  // Confirmation alert before sending
+  Swal.fire({
+    title: "Are you sure?",
+    text: `Do you want to send this message to ${data.officer_name}?`,
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonColor: "#0d6efd",
+    cancelButtonColor: "#6c757d",
+    confirmButtonText: "Yes, Send it!",
+    cancelButtonText: "Cancel",
+  }).then((result) => {
+    if (result.isConfirmed) {
+      // Proceed with AJAX submission
+      submitAjax(
+        form.attr("action"),
+        "send_compliance_focal_person_message",
+        data,
+        function () {
+          form.trigger("reset");
+          form.parents(".modal").modal("hide");
+
+          Swal.fire({
+            icon: "success",
+            title: "Message Sent!",
+            text: "Your message was sent successfully.",
+            confirmButtonColor: "#0d6efd",
+          });
+        },
+        function () {
+          Swal.fire({
+            icon: "error",
+            title: "Sending Failed",
+            text: "We were not able to send your message. Please contact IT support if the issue persists.",
+            confirmButtonColor: "#0d6efd",
+          });
+        }
+      );
+    }
+  });
+});
+
+  
+
+    
+
+
+
+    
+    
+  //   $('#sel_change_region_compliance').change(function(){
+  // // console.log("selection made " + $(this).val() );
+  // let decimal = $(this).val();
+  // let new_region_id= Math.trunc(decimal);
+  // // console.log(new_region_id);
+  // // document.getElementById('director_regional_code').innerHTML = new_region_id;
+  // $("#director_regional_code").val(new_region_id);
+      
+  //   submitAjax("director_dashboard", "director_report_dashboard_all", {}, function (data) {
+  
+  
+  //     let totalRec = data.total_apps_rec[0].total;
+  //     let totalRecComp = data.total_comp_divisional_year[0].total;
+  
+  //     let totalpercentage = isNaN(((totalRecComp / totalRec) * 100).toFixed(2)) ? 0+'%' : ((totalRecComp / totalRec) * 100).toFixed(2)+'%';
+  
+  //             console.log(totalpercentage);
+  
+      
+  //             $("#app-received-today").html(
+  //               new Intl.NumberFormat().format(data.apps_rec_day[0].total)
+  //             );
+  //             $("#app-received-month").html(
+  //               new Intl.NumberFormat().format(data.apps_rec_month[0].total)
+  //             );
+  //             $("#app-completed-today").html(
+  //               new Intl.NumberFormat().format(data.apps_comp_day[0].total)
+  //             );
+  //             $("#app-completed-month").html(
+  //               new Intl.NumberFormat().format(data.apps_comp_month[0].total)
+  //             );
+          
+  //             // applications received for the year
+  //             showDivisionSummary("#app-received-year", data.apps_rec_divisional, 'info');
+          
+  //             // applications completed for the year
+  //             showDivisionSummary("#app-completed-year", data.apps_comp_divisional, 'success');
+          
+  //             // applications received and completed for the year
+  //             showDivisionSummary(
+  //               "#app-received-completed-year",
+  //               data.apps_comp_divisional_year,
+  //         'default'
+  //             );
+          
+  //             // applications past due for the year
+  //             showDivisionSummary(
+  //               "#app-past-due-year",
+  //               data.apps_past_due_dates_divisional,
+  //         'danger'
+  //             );
+          
+  //             // applications with divisions
+  //             showDivisionSummary("#app-with-divisions", data.apps_at_division, 'warning');
+  
+  //             document.getElementById('pec_id').innerHTML = totalpercentage;
+  
+  //           });
+  //   });
+    
+    
+    
+    
+    // if($("#page_name").text() === "director_compliance"){
+    //  // console.log("pagen complaince")
+    //   setTimeout(
+    //       function() 
+    //       {
+  
+    //         submitAjax("director_dashboard", "director_report_dashboard_all", {}, function (data) {
+    //          let totalRec = data.total_apps_rec[0].total;
+    //          let totalRecComp = data.total_comp_divisional_year[0].total;
+    //         //  let totalpercentage = totalRec*totalRecComp/100
+              
+    //           let totalpercentage = ((totalRecComp / totalRec) * 100).toFixed(2)+'%';
+  
+    //           // let totalpercentage = isNaN(((totalRecComp / totalRec) * 100).toFixed(2)) ? 0 : ((totalRecComp / totalRec) * 100).toFixed(2);
+  
+    //          console.log(totalpercentage);
+  
+  
+  
+    //           $("#app-received-today").html(
+    //             new Intl.NumberFormat().format(data.apps_rec_day[0].total)
+    //           );
+    //           $("#app-received-month").html(
+    //             new Intl.NumberFormat().format(data.apps_rec_month[0].total)
+    //           );
+    //           $("#app-completed-today").html(
+    //             new Intl.NumberFormat().format(data.apps_comp_day[0].total)
+    //           );
+    //           $("#app-completed-month").html(
+    //             new Intl.NumberFormat().format(data.apps_comp_month[0].total)
+    //           );
+          
+    //           // applications received for the year
+    //           showDivisionSummary("#app-received-year", data.apps_rec_divisional, 'info');
+          
+    //           // applications completed for the year
+    //           showDivisionSummary("#app-completed-year", data.apps_comp_divisional, 'success');
+          
+    //           // applications received and completed for the year
+    //           showDivisionSummary(
+    //             "#app-received-completed-year",
+    //             data.apps_comp_divisional_year,
+    //       'default'
+    //           );
+          
+    //           // applications past due for the year
+    //           showDivisionSummary(
+    //             "#app-past-due-year",
+    //             data.apps_past_due_dates_divisional,
+    //       'danger'
+    //           );
+          
+    //           // applications with divisions
+    //           showDivisionSummary("#app-with-divisions", data.apps_at_division, 'warning');
+  
+  
+    //           document.getElementById('pec_id').innerHTML = totalpercentage;
+  
+              
+  
+    //          // total_comp_divisional_year
+    //         });
+    //       }, 2000);
+      
+    // }
+  
+  
+  
+    
+  
+  
+  
+  
+  //   if ($("#page_name").text() === "compliance") {
+  //     setInterval(function() {
+  //         // Your code here
+  //         submitAjax("ComplianceReport", "report_dashboard_all", {}, function(data) {
+  //             let totalRec = data.total_apps_rec[0].total;
+  //             let totalRecComp = data.total_comp_divisional_year[0].total;
+  //             let totalpercentage = ((totalRecComp / totalRec) * 100).toFixed(2) + '%';
+  //             $("#app-received-today").html(new Intl.NumberFormat().format(data.apps_rec_day[0].total));
+  //             $("#app-received-month").html(new Intl.NumberFormat().format(data.apps_rec_month[0].total));
+  //             $("#app-completed-today").html(new Intl.NumberFormat().format(data.apps_comp_day[0].total));
+  //             $("#app-completed-month").html(new Intl.NumberFormat().format(data.apps_comp_month[0].total));
+  
+  //             // applications received for the year
+  //             showDivisionSummary("#app-received-year", data.apps_rec_divisional, 'info');
+  
+  //             // applications completed for the year
+  //             showDivisionSummary("#app-completed-year", data.apps_comp_divisional, 'success');
+  
+  //             // applications received and completed for the year
+  //             showDivisionSummaryUpdated("#app-received-completed-year", data.apps_comp_divisional_year, 'default');
+  
+  //             // applications past due for the year
+  //             showDivisionSummary("#app-past-due-year", data.apps_past_due_dates_divisional, 'danger');
+  
+  //             // applications with divisions
+  //             showDivisionSummary("#app-with-divisions", data.apps_at_division, 'warning');
+  
+  //             document.getElementById('pec_id').innerHTML = totalpercentage;
+  //         });
+  //     }, 60000); // 60000 milliseconds = 1 minute
+  // }
+  
+  
+  
+  function showDivisionSummary(id, data, color) {
+    let total = data.reduce((sum, current) => sum + current.total, 0);
+    $(id).find(".count").html(new Intl.NumberFormat().format(total));
+  
+    let contentBody = $(id).find(".content-body");
+  
+    let date = contentBody.data("date") ?? "";
+    let period = contentBody.data("period");
+    let method = contentBody.data("method");
+    let title = contentBody.data("title");
+    let url = contentBody.data("url");
+    let nextLevelModal = contentBody.data("next-level-modal");
+  
+    let periodToAdd = typeof period === "undefined" ? "" : `_${period}`;
+  
+    let dataHtml = "";
+    let showMore = data.length > 5; // If more than 5 items, show "Show More" button
+  
+    data.forEach((current, index) => {
+      let percent = ((current.total / total) * 100).toFixed(2);
+      
+      let hiddenClass = index >= 5 ? "d-none more-items" : ""; // Hide extra items initially
+  
+      dataHtml += `<div class="item ${hiddenClass}">
+        <h4 class="small font-weight-bold">
+          <a href="#" data-method="${method}" data-url="${url}" ${
+            typeof period === "undefined" ? "" : `data-period="${period}"`
+          } data-action="report_dashboard_${method}${periodToAdd}" data-type="${
+            current.division
+          }" data-regcode="${
+            current.region_code
+          }" data-regdivision="${
+            current.current_division_of_application
+          }"
+          data-date="${date}" data-title="${title}" class="${nextLevelModal} text-decoration-none text-muted">
+            ${current.division} (${current.total})
+          </a>
+          <span class="float-right">${percent}%</span>
+        </h4>
+        <div class="progress mb-4">
+          <div class="progress-bar bg-${color}" role="progressbar" style="width: ${percent}%" aria-valuenow="${percent}"
+            aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+      </div>`;
+    });
+  
+    // Append "Show More/Less" button if needed
+    if (showMore) {
+      dataHtml += `
+        <button class="btn btn-link show-more-btn" data-expanded="false">Show More</button>
+      `;
+    }
+  
+    contentBody.html(dataHtml);
+  
+    // Handle "Show More/Less" button click
+    $(id).find(".show-more-btn").on("click", function () {
+      let expanded = $(this).data("expanded");
+  
+      if (expanded) {
+        // Hide extra items
+        $(id).find(".more-items").addClass("d-none");
+        $(this).text("Show More").data("expanded", false);
+      } else {
+        // Show all items
+        $(id).find(".more-items").removeClass("d-none");
+        $(this).text("Show Less").data("expanded", true);
+      }
+    });
+  }
+
+
+
+
+
+window.showRegionSummary = function(id, data, color) {
+
+    const MAX_VISIBLE = 7;
+
+    // Calculate total
+    let total = data.reduce((sum, current) => sum + current.total, 0);
+
+    // Update total count
+    $(id).find(".count").html(new Intl.NumberFormat().format(total));
+
+    let cardBody = $(id).find(".card-body");
+    let period = cardBody.data("period");
+    let method = cardBody.data("method");
+    let title = cardBody.data("title");
+    let url = cardBody.data("url");
+    let nextLevelModal = cardBody.data("next-level-modal");
+    let date = cardBody.data("date") ?? "";
+
+    let periodToAdd = typeof period === "undefined" ? "" : `_${period}`;
+
+    let progressContainer = $(id).find(".progress-animate");
+    let listContainer = $(id).find(".top-referral-pages");
+    let showMoreBtn = $(id).find(".show-more-btn");
+
+    progressContainer.empty();
+    listContainer.empty();
+
+    const colorClasses = ['primary', 'info', 'warning', 'success', 'danger', 'secondary'];
+
+    /* ------------------ PROGRESS BARS ------------------ */
+    data.forEach(function (current, index) {
+
+        let percent = total > 0 ? ((current.total / total) * 100).toFixed(2) : 0;
+        const colorClass = colorClasses[index % colorClasses.length];
+        let progressWidth = current.total > 0 ? percent : 1;
+
+        let progressBar = `
+            <div class="progress-bar bg-${colorClass}"
+                role="progressbar"
+                style="width:${progressWidth}%"
+                title="${current.division}: ${current.total} (${percent}%)"
+                data-bs-toggle="tooltip">
+            </div>`;
+
+        progressContainer.append(progressBar);
+    });
+
+    /* ------------------ LIST ITEMS ------------------ */
+    data.forEach(function (current, index) {
+
+        let percent = total > 0 ? ((current.total / total) * 100).toFixed(2) : 0;
+        const colorClass = colorClasses[index % colorClasses.length];
+
+        let hiddenClass = index >= MAX_VISIBLE ? 'd-none extra-item' : '';
+
+        let listItem = `
+        <li class="${colorClass} ${hiddenClass}">
+            <div class="d-flex align-items-center justify-content-between w-100">
+                
+                <div class="region-name text-truncate">
+                    <a href="#"
+                       data-method="${method}"
+                       data-url="${url}"
+                       ${typeof period === "undefined" ? "" : `data-period="${period}"`}
+                       data-action="report_dashboard_${method}${periodToAdd}"
+                       data-date="${date}"
+                       data-title="${title}"
+                       data-type="${
+            current.division
+          }" data-regcode="${
+            current.region_code
+          }" data-regdivision="${
+            current.current_division_of_application
+          }"
+                       class="${nextLevelModal} text-decoration-none ${current.total === 0 ? 'text-muted' : ''}">
+                        ${current.division}
+                    </a>
+                </div>
+
+                <div class="fs-12 text-muted ms-2 text-end">
+                    ${current.total.toLocaleString()} ${total > 0 ? `(${percent}%)` : ''}
+                </div>
+
+            </div>
+        </li>`;
+
+        listContainer.append(listItem);
+    });
+
+    /* ------------------ SHOW MORE BUTTON ------------------ */
+    if (data.length > MAX_VISIBLE) {
+        showMoreBtn.removeClass("d-none").text("Show More");
+    } else {
+        showMoreBtn.addClass("d-none");
+    }
+
+    // Tooltips
+    $('[data-bs-toggle="tooltip"]').tooltip();
+}
+
+
+
+
+$(document).on("click", ".show-more-btn", function () {
+    let card = $(this).closest(".card-body");
+    let hiddenItems = card.find(".extra-item");
+
+    if ($(this).text() === "Show More") {
+        hiddenItems.removeClass("d-none");
+        $(this).text("Show Less");
+    } else {
+        hiddenItems.addClass("d-none");
+        $(this).text("Show More");
+    }
+});
+
+
+
+
+// Old Function
+  // function showDivisionSummary(id, data, color) {
+  //   // console.log(data[0]); // Logging the first data item
+
+  //   let total = data.reduce(function (sum, current) {
+     
+  //     return (sum += current.total);
+  //   }, 0);
+  //  //console.log(total);
+
+  //   $(id).find(".count").html(new Intl.NumberFormat().format(total));
+
+  //   let contentBody = $(id).find(".content-body");
+
+  //   let date = contentBody.data("date") ?? "";
+  //   let period = contentBody.data("period");
+  //   let method = contentBody.data("method");
+  //   let title = contentBody.data("title");
+  //   let url = contentBody.data("url");
+  //   let nextLevelModal = contentBody.data("next-level-modal");
+
+  //   let periodToAdd = typeof period === "undefined" ? "" : `_${period}`;
+  //   let dataHtml = data.reduce(function (sum, current) {
+  //     let percent = ((current.total / total) * 100).toFixed(2);
+
+  //    // console.log(percent);
+
+  //     let html = `<div class="item">
+  //       <h4 class="small font-weight-bold">
+  //         <a href="#" data-method="${method}" data-url="${url}" ${
+  //       typeof period === "undefined" ? "" : `data-period="${period}"`
+  //     } data-action="report_dashboard_${method}${periodToAdd}" data-type="${
+  //       current.division
+  //     }"  data-regcode="${
+  //       current.region_code
+  //     }"  data-regdivision="${
+  //       current.current_division_of_application
+  //     }"
+  //      data-date="${date}" data-title="${title}" class="${nextLevelModal} text-decoration-none text-muted">
+  //           ${current.division} (${current.total})
+  //         </a>
+  //         <span class="float-right">${percent}%</span>
+  //       </h4>
+  //       <div class="progress mb-4">
+  //         <div class="progress-bar bg-${color}" role="progressbar" style="width: ${percent}%" aria-valuenow="${percent}"
+  //           aria-valuemin="0" aria-valuemax="100"></div>
+  //       </div>
+  //     </div>
+  //     <input type='hidden' value='${current.division}' id='currentDivision'> `;
+
+  //     return (sum += html);
+  //   }, "");
+
+  //   contentBody.html(dataHtml);
+  // }
+
+  
+  
+  
+  
+    function showDivisionSummaryUpdated(id, data,color) {
+      
+      let newtotal = firmList.total_apps_rec[0].total;
+  
+      let lrdData = firmList.apps_rec_divisional.find(item => item.division === "LRD");
+      let lvdData = firmList.apps_rec_divisional.find(item => item.division === "LVD");
+      let pvlmdData = firmList.apps_rec_divisional.find(item => item.division === "PVLMD");
+      let smdData = firmList.apps_rec_divisional.find(item => item.division === "SMD");
+  
+  
+  
+  
+      let lrdData1 = firmList.apps_comp_divisional_year.find(item => item.division === "LRD");
+      let lvdData1 = firmList.apps_comp_divisional_year.find(item => item.division === "LVD");
+      let pvlmdData1 = firmList.apps_comp_divisional_year.find(item => item.division === "PVLMD");
+      let smdData1 = firmList.apps_comp_divisional_year.find(item => item.division === "SMD");
+    
+  
+      let lrd_rec_total = lrdData && lrdData.total !== '' ? lrdData.total : 0;
+      let lvd_rec_total = lvdData && lvdData.total !== '' ? lvdData.total : 0;
+      let pvlmd_rec_total = pvlmdData && pvlmdData.total !== '' ? pvlmdData.total : 0;
+      let smd_rec_total = smdData && smdData.total !== '' ? smdData.total : 0;
+  
+  
+      let lrd_rec_comp_total = lrdData1 && lrdData1.total !== '' ? lrdData1.total : 0;
+      let lvd_rec_comp_total = lvdData1 && lvdData1.total !== '' ? lvdData1.total : 0;
+      let pvlmd_rec_comp_total = pvlmdData1 && pvlmdData1.total !== '' ? pvlmdData1.total : 0;
+      let smd_rec_comp_total = smdData1 && smdData1.total !== '' ? smdData1.total : 0;
+  
+  
+  
+      // console.log(lrd_rec_total,lvd_rec_total,pvlmd_rec_total,smd_rec_total);
+  
+  
+  
+      let lrdtotalpercentage = isNaN(((lrd_rec_comp_total / lrd_rec_total) * 100).toFixed(2)) ? 0 : ((lrd_rec_comp_total / lrd_rec_total) * 100).toFixed(2);
+      let lvdtotalpercentage = isNaN(((lvd_rec_comp_total / lvd_rec_total) * 100).toFixed(2)) ? 0 : ((lvd_rec_comp_total / lvd_rec_total) * 100).toFixed(2);
+      let pvlmdtotalpercentage = isNaN(((pvlmd_rec_comp_total / pvlmd_rec_total) * 100).toFixed(2)) ? 0 : ((pvlmd_rec_comp_total / pvlmd_rec_total) * 100).toFixed(2);
+       let smdtotalpercentage = isNaN(((smd_rec_comp_total / smd_rec_total) * 100).toFixed(2)) ? 0 : ((smd_rec_comp_total / smd_rec_total) * 100).toFixed(2);
+  
+  
+  
+  
+  
+       
+      let total = data.reduce(function (sum, current) {
+       
+        return (sum += current.total);
+      }, 0);
+     // let total = totalPerRec;
+     //console.log(newtotal);
+  
+      $(id).find(".count").html(new Intl.NumberFormat().format(total));
+  
+      let contentBody = $(id).find(".content-body");
+  
+      let date = contentBody.data("date") ?? "";
+      let period = contentBody.data("period");
+      let method = contentBody.data("method");
+      let title = contentBody.data("title");
+      let url = contentBody.data("url");
+      let nextLevelModal = contentBody.data("next-level-modal");
+  
+      let periodToAdd = typeof period === "undefined" ? "" : `_${period}`;
+      let dataHtml = data.reduce(function (sum, current) {
+        let percent = ((current.total / newtotal) * 100).toFixed(2);
+       
+        
+       
+  
+       // console.log(percent);
+  
+        let html = `<div class="item">
+          <h4 class="small font-weight-bold">
+            <a href="#" data-method="${method}" data-url="${url}" ${
+          typeof period === "undefined" ? "" : `data-period="${period}"`
+        } data-action="report_dashboard_${method}${periodToAdd}" data-type="LRD" data-date="${date}" data-title="${title}" class="${nextLevelModal} text-decoration-none text-muted">
+              LRD (${lrd_rec_comp_total})
+            </a>
+            <span class="float-right">${lrdtotalpercentage}%</span>
+          </h4>
+          <div class="progress mb-4">
+            <div class="progress-bar bg-${color}" role="progressbar" style="width: ${lrdtotalpercentage}%" aria-valuenow="${lrdtotalpercentage}"
+              aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+  
+  
+        <div class="item">
+          <h4 class="small font-weight-bold">
+            <a href="#" data-method="${method}" data-url="${url}" ${
+          typeof period === "undefined" ? "" : `data-period="${period}"`
+        } data-action="report_dashboard_${method}${periodToAdd}" data-type="LVD" data-date="${date}" data-title="${title}" class="${nextLevelModal}
+         text-decoration-none text-muted">
+              LVD (${lvd_rec_comp_total})
+            </a>
+            <span class="float-right">${lvdtotalpercentage}%</span>
+          </h4>
+          <div class="progress mb-4">
+            <div class="progress-bar bg-${color}" role="progressbar" style="width: ${lvdtotalpercentage}%" aria-valuenow="${lvdtotalpercentage}"
+              aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+  
+  
+  
+        <div class="item">
+          <h4 class="small font-weight-bold">
+            <a href="#" data-method="${method}" data-url="${url}" ${
+          typeof period === "undefined" ? "" : `data-period="${period}"`
+        } data-action="report_dashboard_${method}${periodToAdd}" data-type="PVLMD" data-date="${date}" data-title="${title}" class="${nextLevelModal} text-decoration-none text-muted">
+              PVLMD (${pvlmd_rec_comp_total})
+            </a>
+            <span class="float-right">${pvlmdtotalpercentage}%</span>
+          </h4>
+          <div class="progress mb-4">
+            <div class="progress-bar bg-${color}" role="progressbar" style="width: ${pvlmdtotalpercentage}%" aria-valuenow="${pvlmdtotalpercentage}"
+              aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+  
+  
+        
+        <div class="item">
+          <h4 class="small font-weight-bold">
+            <a href="#" data-method="${method}" data-url="${url}" ${
+          typeof period === "undefined" ? "" : `data-period="${period}"`
+        } data-action="report_dashboard_${method}${periodToAdd}" data-type="SMD" data-date="${date}" data-title="${title}" class="${nextLevelModal} text-decoration-none text-muted">
+              SMD (${smd_rec_comp_total})
+            </a>
+            <span class="float-right">${smdtotalpercentage}%</span>
+          </h4>
+          <div class="progress mb-4">
+            <div class="progress-bar bg-${color}" role="progressbar" style="width: ${smdtotalpercentage}%" aria-valuenow="${smdtotalpercentage}"
+              aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+        `
+        ;
+  
+        return (html);
+      }, "");
+  
+      contentBody.html(dataHtml);
+    }
+  
+  
+  
+    
+//     var firmList; // global variable
+  
+  
+  
+    function submitAjax(
+      url,
+      requestType,
+      data = {},
+      success = function () {},
+      error = function () {}
+    ) {
+     
+     var region_id =$('#sel_change_region_compliance').val();
+    
+    
+  
+     if(region_id != undefined){
+      region_id =  region_id.replace(".0", "");
+     }
+
+      var user_division = $('#director_division').val();
+     console.log(user_division,user_division);
+  
+      $.ajax({
+        type: "POST",
+        url,
+        data: {
+          request_type: requestType,
+          region_id: region_id,
+          division: user_division,
+          ...data,
+        },
+        cache: false,
+        success: function (response) {
+        var reccc = JSON.parse(response);
+        console.log(reccc);
+
+        firmList = reccc;
+        
+        //  let totalPerRec = reccc.apps_rec_divisional[0].total;
+        // let lrdData = reccc.apps_at_division.find(item => item.division === "LRD");
+        // let  lrdTotal = lrdData.total;
+        
+          try {
+            success(JSON.parse(response));
+          } catch (e) {
+            alert(
+              "Failed to get requested data. Please try again shortly or contact IT Support if issue persists."
+            );
+            console.error(e);
+          }
+        },
+        error: function (xhr) {
+          error(xhr);
+        },
+      });
+    }
+  });
+  
+  
+
+$(document).ready(function() {
+
+  $('#apps_received_today').on('click', function (e) {
+  e.preventDefault();
+
+
+    var modalElement = document.getElementById('regionsModal');
+  if (modalElement) {
+    var modal = new bootstrap.Modal(modalElement);
+    modal.show();
+  } else {
+    console.error("Modal element not found!");
+  }
+
+
+
+  // $("#").modal("show");
+
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const currentDate = new Date();
+  const day = currentDate.getDate();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+  const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+  const division = $('#director_division').val();
+
+  // Create uppercase title
+  const title = `${division}'S APPLICATIONS RECEIVED TODAY ${formattedDate}`.toUpperCase();
+
+  // Set modal header
+  document.getElementById('regionsModalLabel').innerHTML = title;
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_created_day_by_regions',
+      division: division
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division);
+
+      if (json_result.apps_at_division == '') {
+        console.log("No data found");
+      } else {
+        let dataSet1 = [];
+        let num1 = 0;
+
+        $('#region_table').DataTable().clear().destroy();
+
+        for (let i = 0; i < json_result.apps_at_division.length; i++) {
+          let html = [];
+          num1 += 1;
+
+          let region = json_result.apps_at_division[i].region;
+          let total = json_result.apps_at_division[i].total;
+
+          let action = `
+            <a href="javascript:void(0)" 
+               data-id="${json_result.apps_at_division[i].region_code}" 
+               data-regionname="${json_result.apps_at_division[i].region}"  
+               id="view_recieved_today_by_region"  
+               class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+              <i class="fa fa-info-circle"></i> Details
+            </a>`;
+
+          html.push(region);
+          html.push(total);
+          html.push(action);
+
+          dataSet1.push(html);
+        }
+
+        // Initialize DataTable with uppercase title for exports
+        $('#region_table').DataTable({
+          data: dataSet1,
+          ordering: false,   // <---- ADD THIS
+          dom: 'Bfrtip',
+          lengthMenu: [
+            [10, 25, 50, -1],
+            ['10 rows', '25 rows', '50 rows', 'Show all']
+          ],
+          buttons: [
+            {
+              extend: 'copy',
+              title: title
+            },
+            {
+              extend: 'csv',
+              title: title
+            },
+            {
+              extend: 'excel',
+              title: title
+            },
+            {
+              extend: 'pdf',
+              title: title
+            },
+            {
+              extend: 'print',
+              text: 'Print',
+              title: '', // Remove default
+              customize: function (win) {
+                $(win.document.body)
+                  .prepend(
+                    `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                     <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                       This report is generated using the Enterprise Land Information System
+                     </p>`
+                  )
+                  .css('font-size', '19px');
+
+                $(win.document.body).find('table')
+                  .addClass('compact')
+                  .css('font-size', '19px')
+                  .css('width', '100%');
+              }
+            },
+            // {
+            //   extend: 'colvis',
+            //   text: 'Show / Hide Columns'
+            // },
+            'pageLength'
+          ]
+        }).draw();
+      }
+    }
+  });
+});
+
+
+
+    
+// $('#apps_received_today').on('click', function (e) {
+//     e.preventDefault();
+//     console.log('Button clicked');
+    
+//     var modalElement = document.getElementById('regionsModal');
+//     console.log('Modal element found:', modalElement);
+    
+//     if (modalElement) {
+//         console.log('Modal classes:', modalElement.className);
+//         var modal = new bootstrap.Modal(modalElement);
+//         console.log('Bootstrap modal instance created:', modal);
+//         modal.show();
+//         console.log('Modal show called');
+//     } else {
+//         console.error("Modal element not found!");
+//     }
+    
+//     // Rest of your code...
+// });
+
+
+
+ $(document).on('click', '#view_recieved_today_by_region', function (e) {
+  e.preventDefault();
+
+  // Show modal
+  $("#serviceTypeModal").modal("show");
+
+  // Prepare date info
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const currentDate = new Date();
+  const day = currentDate.getDate();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+  const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+  // Extract region data
+  const regional_code = $(this).data('id');
+  const regional_name = $(this).data('regionname');
+  const division = $('#director_division').val();
+
+  console.log("Region:", regional_name);
+
+  // Set hidden field
+  $("#today_region_id").val(regional_code);
+
+  // Title (uppercase)
+  const title = `${regional_name}'S APPLICATIONS RECEIVED TODAY ${formattedDate}`.toUpperCase();
+  document.getElementById('serviceTypeModalLabel').innerHTML = title;
+
+  // AJAX call
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_created_day_by_division',
+      region_id: regional_code,
+      division: division
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division);
+
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      // Sort results by total (descending)
+      json_result.apps_at_division.sort((a, b) => b.total - a.total);
+
+      let dataSet1 = [];
+      let num1 = 0;
+
+      // Clear previous DataTable
+      $('#created_by_services_today').DataTable().clear().destroy();
+
+      // Populate data
+      for (let i = 0; i < json_result.apps_at_division.length; i++) {
+        const serviceData = json_result.apps_at_division[i];
+        num1 += 1;
+
+        const service_type = serviceData.service_type;
+        const total = serviceData.total;
+
+        const action = `
+          <a href="javascript:void(0)" 
+             data-id="${serviceData.service_type}"  
+              data-rg="${regional_name}"  
+             id="view_recieved_today_by_service"  
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+              <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet1.push([service_type, total, action]);
+      }
+
+      // Initialize DataTable
+      $('#created_by_services_today').DataTable({
+        data: dataSet1,
+        dom: 'Bfrtip',
+        order: [[1, 'desc']], // Sort by total descending
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        buttons: [
+          { extend: 'copy', title: title },
+          { extend: 'csv', title: title },
+          { extend: 'excel', title: title },
+          { extend: 'pdf', title: title },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '',
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(`
+                  <h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                  <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                    This report is generated using the Enterprise Land Information System
+                  </p>
+                `)
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // { extend: 'colvis', text: 'Show / Hide Columns' },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+});
+
+
+
+
+
+
+    $('#user_division_today').on('click', function(e) {
+        e.preventDefault();
+
+     $("#serviceTypeModal").modal("show");  
+     const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',  
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];    const currentDate = new Date();
+    const day = currentDate.getDate();
+    const monthIndex = currentDate.getMonth();
+    const year = currentDate.getFullYear();
+    const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+
+        var regional_code = $('#director_regional_code').val();
+        var division = $('#director_division').val();
+
+        var title  = division+"'"+'s'+" "+"Applications Received Today"+" "+formattedDate;
+
+        document.getElementById('serviceTypeModalLabel').innerHTML = title;
+
+        
+       //console.log(regional_code,division);
+
+
+
+        $.ajax({
+            type : "POST",
+            url : "director_dashboard",
+            data : { 
+                request_type : 'director_report_dashboard_created_day_by_division',
+                region_id : regional_code.trim(),
+                division:division
+            },
+            cache: false,
+            success: function(response) {
+               // console.log(response);
+
+                var json_result = JSON.parse(response);
+
+                console.log(json_result.apps_at_division);
+
+                if (json_result.apps_at_division == ''){
+
+                    //.log("data not found");       
+    
+    }else {
+
+        let dataSet1 = [];
+        let num1 = 0;
+ 
+      $('#created_by_services_today').DataTable().clear().destroy();
+
+        for(let i=0; i<json_result.apps_at_division.length; i++) {
+            let html = [];
+            num1 = +num1 + 1;
+
+            let service_type = json_result.apps_at_division[i].service_type;
+            let total = json_result.apps_at_division[i].total;
+            let action = `<a href="javascript:void(0)" data-id="${json_result.apps_at_division[i].service_type}"  id=""  
+            class="btn btn-secondary">View <i class="fa fa-eye"></i></a> `
+
+            // let payment_status = e[i].payment_status;
+            // let buttons = e[i].buttons;
+            html.push(service_type);
+            html.push(total);
+            html.push(action);
+
+            dataSet1.push(html);
+
+          ///console.log(dataSet1)
+          }
+
+        // let dataTable_Obj = $('#recievedtoday').DataTable({
+        //     data: dataSet1
+        //   })
+
+          $('#created_by_services_today').DataTable().clear().destroy();
+                        
+          $('#created_by_services_today').DataTable({ data: dataSet1,
+            dom : 'Bfrtip',
+            lengthMenu : [
+                [ 10, 25, 50, -1 ],
+                [ '10 rows', '25 rows',
+                    '50 rows', 'Show all' ] ],
+            buttons : [ 'pageLength', 'copy',
+                'csv', 'excel', 'pdf', 'print' ] }).draw();
+
+     }
+
+
+            }
+        })
+
+
+      
+    })
+
+
+
+
+
+
+   $(document).on('click', '#view_recieved_today_by_service', function (e) {
+  e.preventDefault();
+
+  // Show modal
+  $("#applicationsModal").modal("show");
+
+  // Prepare date info
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const currentDate = new Date();
+  const day = currentDate.getDate();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+  const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+  // Extract data
+  const regional_code = $('#today_region_id').val();
+  const service_type = $(this).data('id');
+  const regName = $(this).data('rg');
+
+  
+
+  // Title (uppercase)
+  const title = `${service_type} RECEIVED TODAY (${formattedDate}) FROM ${regName}`.toUpperCase();
+  document.getElementById('applicationsModalLabel').innerHTML = title;
+
+  // Destroy existing DataTable
+  $('#view_applications_by_service_type').DataTable().clear().destroy();
+
+  // AJAX Request
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_created_day_by_service_type',
+      region_id: regional_code,
+      service_type: service_type
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result);
+
+      // Handle no data case
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        $('#view_applications_by_service_type').DataTable().clear().destroy();
+        $('#view_applications_by_service_type').html(`
+          <tr>
+            <td colspan="8" class="text-center text-muted">
+              No applications received today for this service type.
+            </td>
+          </tr>
+        `);
+        return;
+      }
+
+      // Sort by days_due descending
+      json_result.apps_at_division.sort((a, b) => b.days_due - a.days_due);
+
+      // Build dataset
+      const dataSet = json_result.apps_at_division.map(app => {
+
+        const action = `
+        <td class="text-end">
+					<div class="dropdown">
+						<a href="javascript:void(0);"
+						class="btn btn-icon btn-sm btn-primary border action-btn""
+						data-bs-toggle="dropdown"
+						data-bs-display="static"
+						aria-expanded="false">
+							<i class="ri-more-2-line"></i>
+						</a>
+
+						<ul class="dropdown-menu dropdown-menu-end table-dropdown" data-popper-placement="bottom-end">
+
+							<!-- Cabinet -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								data-bs-toggle="modal"
+								data-bs-target="#cabinetModal"
+								data-target-id="${escapeHtml(app.job_number || '')}">
+									<i class="ri-hard-drive-2-line me-2"></i>
+									Track
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+						
+					
+
+							<!-- Application Details (Form Submit) -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								onclick="viewApplicationDetails('${app.job_number}','${app.transaction_number}','${app.case_number}','${app.business_process_sub_name}')">
+									<i class="ri-information-line me-2"></i>
+									Application Details
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+							
+
+						</ul>
+					</div>
+				</td>`;
+
+
+        // const action = `
+        //   <div class="btn-group" role="group">
+        //     <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+        //       Actions
+        //     </button>
+        //     <div class="dropdown-menu">
+        //       <button type="button" class="dropdown-item"
+        //         id="btn_cabinet"
+        //         data-target-id="${app.job_number}"
+        //         data-toggle="modal"
+        //         data-target="#cabinetModal">
+        //         Track <i class="fas fa-hdd"></i>
+        //       </button>
+        //       <form class="d-inline" target="_blank" action="front_office_view_application" method="post">
+        //         <input type="hidden" name="case_number" value="${app.transaction_number}">
+        //         <input type="hidden" name="search_text" value="${app.case_number}">
+        //         <input type="hidden" name="job_number" value="${app.job_number}">
+        //         <input type="hidden" name="business_process_sub_name" value="${app.business_process_name}">
+        //         <button type="submit" name="save" class="dropdown-item">
+        //           Application Details <i class="fas fa-info-circle"></i>
+        //         </button>
+        //       </form>
+        //     </div>
+        //   </div>
+        // `;
+
+        return [
+          app.job_number,
+          app.ar_name,
+          app.business_process_name,
+          app.created_date,
+          app.days_due,
+          app.due_date,
+          app.days_since_batched,
+           app.job_status,
+          action
+        ];
+      });
+
+      // Initialize DataTable
+      $('#view_applications_by_service_type').DataTable({
+        data: dataSet,
+        dom: 'Bfrtip',
+        order: [[5, 'desc']], // sort by days_due descending
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        buttons: [
+          { extend: 'copy', title: title },
+          { extend: 'csv', title: title },
+          { extend: 'excel', title: title },
+          { extend: 'pdf', title: title },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '',
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(`
+                  <h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                  <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                    This report is generated using the Enterprise Land Information System
+                  </p>
+                `)
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // { extend: 'colvis', text: 'Show / Hide Columns' },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+});
+
+
+
+
+
+ $('#apps_received_this_month').on('click', function (e) {
+  e.preventDefault();
+
+  $("#regionsModal").modal("show");
+
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const currentDate = new Date();
+  const monthIndex = currentDate.getMonth();
+  const day = currentDate.getDate();
+    const year = currentDate.getFullYear();
+  const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+  const division = $('#director_division').val();
+
+  // Create uppercase title
+  const title = `${division}'S APPLICATIONS PENDING AS AT ${formattedDate}`.toUpperCase();
+
+  // Apply uppercase title to modal header
+  document.getElementById('regionsModalLabel').innerHTML = title;
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_created_month_by_regions',
+      division: division
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division);
+
+      if (json_result.apps_at_division == '') {
+        console.log("No data found");
+      } else {
+        let dataSet1 = [];
+        let num1 = 0;
+
+        $('#region_table').DataTable().clear().destroy();
+
+        for (let i = 0; i < json_result.apps_at_division.length; i++) {
+          let html = [];
+          num1 += 1;
+
+          let region = json_result.apps_at_division[i].region;
+          let total = json_result.apps_at_division[i].total;
+
+          let action = `
+            <a href="javascript:void(0)" 
+               data-id="${json_result.apps_at_division[i].region_code}" 
+               data-regionname="${json_result.apps_at_division[i].region}"  
+               id="view_recieved_month_by_region"  
+               class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+              <i class="fa fa-info-circle"></i> Details
+            </a>`;
+
+          html.push(region);
+          html.push(total);
+          html.push(action);
+          dataSet1.push(html);
+        }
+
+        // Initialize DataTable with export buttons using uppercase title
+        $('#region_table').DataTable({
+          data: dataSet1,
+          ordering: false,   // <---- ADD THIS
+          dom: 'Bfrtip',
+          lengthMenu: [
+            [10, 25, 50, -1],
+            ['10 rows', '25 rows', '50 rows', 'Show all']
+          ],
+          buttons: [
+            {
+              extend: 'copy',
+              title: title
+            },
+            {
+              extend: 'csv',
+              title: title
+            },
+            {
+              extend: 'excel',
+              title: title
+            },
+            {
+              extend: 'pdf',
+              title: title
+            },
+            {
+              extend: 'print',
+              text: 'Print',
+              title: '', // disable default
+              customize: function (win) {
+                $(win.document.body)
+                  .prepend(
+                    `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                     <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                       This report is generated using the Enterprise Land Information System
+                     </p>`
+                  )
+                  .css('font-size', '19px');
+
+                $(win.document.body).find('table')
+                  .addClass('compact')
+                  .css('font-size', '19px')
+                  .css('width', '100%');
+              }
+            },
+            // {
+            //   extend: 'colvis',
+            //   text: 'Show / Hide Columns'
+            // },
+            'pageLength'
+          ]
+        }).draw();
+      }
+    }
+  });
+});
+
+
+
+
+$(document).on('click', '#view_recieved_month_by_region', function (e) {
+  e.preventDefault();
+
+  // Show modal
+  $("#serviceTypeModal").modal("show");
+
+  // Prepare month info
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const currentDate = new Date();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+  const day = currentDate.getDate();
+  const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+  // Extract region data
+  const regional_code = $(this).data('id');
+  const regional_name = $(this).data('regionname');
+  const division = $('#director_division').val();
+
+  console.log("Region:", regional_name);
+
+  // Set hidden field
+  $("#today_region_id").val(regional_code);
+
+  // Title (uppercase)
+  const title = `${regional_name}'S APPLICATIONS PENDING AS AT (${formattedDate})`.toUpperCase();
+  document.getElementById('serviceTypeModalLabel').innerHTML = title;
+
+  // AJAX call
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_pending_as_at_day_by_division',
+      region_id: regional_code,
+      division: division
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division);
+
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        $('#created_by_services_today').DataTable().clear().destroy();
+        $('#created_by_services_today').html('<tr><td colspan="3" class="text-center text-muted">No applications found for this month.</td></tr>');
+        return;
+      }
+
+      // Sort results by total (descending)
+      json_result.apps_at_division.sort((a, b) => b.total - a.total);
+
+      let dataSet1 = [];
+      let num1 = 0;
+
+      // Clear previous DataTable
+      $('#created_by_services_today').DataTable().clear().destroy();
+
+      // Populate data
+      for (let i = 0; i < json_result.apps_at_division.length; i++) {
+        const serviceData = json_result.apps_at_division[i];
+        num1 += 1;
+
+        const service_type = serviceData.service_type;
+        const total = serviceData.total;
+
+        const action = `
+          <a href="javascript:void(0)" 
+             data-id="${serviceData.service_type}"  
+             data-rg="${regional_name}"
+             id="view_recieved_month_by_service"  
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+              <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet1.push([service_type, total, action]);
+      }
+
+      // Initialize DataTable
+      $('#created_by_services_today').DataTable({
+        data: dataSet1,
+        dom: 'Bfrtip',
+        order: [[1, 'desc']], // Sort by total descending
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        buttons: [
+          { extend: 'copy', title: title },
+          { extend: 'csv', title: title },
+          { extend: 'excel', title: title },
+          { extend: 'pdf', title: title },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '',
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(`
+                  <h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                  <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                    This report is generated using the Enterprise Land Information System
+                  </p>
+                `)
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // { extend: 'colvis', text: 'Show / Hide Columns' },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+});
+
+
+        
+
+
+$(document).on('click', '#view_recieved_month_by_service', function (e) {
+  e.preventDefault();
+
+  // Show modal
+  $("#applicationsModalRecievedMonth").modal("show");
+
+  // Prepare date info
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const currentDate = new Date();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+    const day = currentDate.getDate();
+  const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+  // Extract data
+  const regional_code = $('#today_region_id').val();
+  const service_type = $(this).data('id');
+  const regionalName = $(this).data('rg');
+
+  // Title (uppercase)
+  const title = `${service_type} PENDING AS AT (${formattedDate}) FROM ${regionalName}`.toUpperCase();
+  document.getElementById('applicationsModalLabelRecievedMonth').innerHTML = title;
+
+  // Destroy existing DataTable
+  $('#view_applications_month_by_service_type').DataTable().clear().destroy();
+
+  // AJAX Request
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_created_month_by_service_type',
+      region_id: regional_code,
+      service_type: service_type
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result);
+
+      // Handle no data case
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        $('#view_applications_month_by_service_type').DataTable().clear().destroy();
+        $('#view_applications_month_by_service_type').html(`
+          <tr>
+            <td colspan="8" class="text-center text-muted">
+              No applications received this month for this service type.
+            </td>
+          </tr>
+        `);
+        return;
+      }
+
+      // Sort by days_due descending
+      json_result.apps_at_division.sort((a, b) => b.days_due - a.days_due);
+
+      // Build dataset
+      const dataSet = json_result.apps_at_division.map(app => {
+        const action = `
+        <td class="text-end">
+					<div class="dropdown">
+						<a href="javascript:void(0);"
+						class="btn btn-icon btn-sm btn-primary border action-btn""
+						data-bs-toggle="dropdown"
+						data-bs-display="static"
+						aria-expanded="false">
+							<i class="ri-more-2-line"></i>
+						</a>
+
+						<ul class="dropdown-menu dropdown-menu-end table-dropdown" data-popper-placement="bottom-end">
+
+							<!-- Cabinet -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								data-bs-toggle="modal"
+								data-bs-target="#cabinetModal"
+								data-target-id="${escapeHtml(app.job_number || '')}">
+									<i class="ri-hard-drive-2-line me-2"></i>
+									Track
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+						
+					
+
+							<!-- Application Details (Form Submit) -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								onclick="viewApplicationDetails('${app.job_number}','${app.transaction_number}','${app.case_number}','${app.business_process_sub_name}')">
+									<i class="ri-information-line me-2"></i>
+									Application Details
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+							
+
+						</ul>
+					</div>
+				</td>`;
+
+        return [
+          app.job_number,
+          app.ar_name,
+          app.business_process_name,
+          app.created_date,
+          app.days_due,
+          app.due_date,
+          app.days_since_batched,
+           app.job_status,
+          action
+        ];
+      });
+
+      // Initialize DataTable
+      $('#view_applications_month_by_service_type').DataTable({
+        data: dataSet,
+        dom: 'Bfrtip',
+        order: [[5, 'desc']], // sort by days_due descending
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        buttons: [
+          { extend: 'copy', title: title },
+          { extend: 'csv', title: title },
+          { extend: 'excel', title: title },
+          { extend: 'pdf', title: title },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '',
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(`
+                  <h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                  <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                    This report is generated using the Enterprise Land Information System
+                  </p>
+                `)
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // { extend: 'colvis', text: 'Show / Hide Columns' },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+});
+
+
+
+$('#apps_completed_today_division').on('click', function (e) {
+  e.preventDefault();
+
+  // Show modal
+  $("#regionsModal").modal("show");
+
+  // Prepare current date
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const currentDate = new Date();
+  const day = currentDate.getDate();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+  const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+  // Get division and title
+  const division = $('#director_division').val();
+  const title = `${division}'S APPLICATIONS COMPLETED TODAY ${formattedDate}`.toUpperCase();
+
+  // Apply uppercase title to modal header
+  document.getElementById('regionsModalLabel').innerHTML = title;
+
+  // Fetch data from backend
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_completed_today_by_regions',
+      division: division
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division);
+
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      // Sort results by total (descending)
+      json_result.apps_at_division.sort((a, b) => b.total - a.total);
+
+      let dataSet1 = [];
+      let num1 = 0;
+
+      // Clear old table
+      $('#region_table').DataTable().clear().destroy();
+
+      // Populate table
+      for (let i = 0; i < json_result.apps_at_division.length; i++) {
+        const regionData = json_result.apps_at_division[i];
+        num1 += 1;
+
+        const region = regionData.region;
+        const total = regionData.total;
+
+        const action = `
+          <a href="javascript:void(0)" 
+             data-id="${regionData.region_code}" 
+             data-regionname="${regionData.region}"  
+             id="view_completed_today_by_region"  
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+            <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet1.push([region, total, action]);
+      }
+
+      // Initialize DataTable with export options
+      $('#region_table').DataTable({
+        data: dataSet1,
+        dom: 'Bfrtip',
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        order: [[1, 'desc']], // Sort by total descending
+        buttons: [
+          { extend: 'copy', title: title },
+          { extend: 'csv', title: title },
+          { extend: 'excel', title: title },
+          { extend: 'pdf', title: title },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '',
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(`
+                  <h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                  <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                    This report is generated using the Enterprise Land Information System
+                  </p>
+                `)
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // { extend: 'colvis', text: 'Show / Hide Columns' },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+});
+
+
+
+
+$(document).on('click', '#view_completed_today_by_region', function (e) {
+  e.preventDefault();
+
+  // Show modal
+  $("#completedTodayserviceTypeModal").modal("show");
+
+  // Prepare date info
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const currentDate = new Date();
+  const day = currentDate.getDate();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+  const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+  // Extract region data
+  const regional_code = $(this).data('id');
+  const regional_name = $(this).data('regionname');
+  const division = $('#director_division').val();
+
+  console.log("Region:", regional_name);
+
+  // Set hidden field
+  $("#today_region_id").val(regional_code);
+
+  // Title (uppercase for clarity)
+  const title = `${regional_name}'S APPLICATIONS COMPLETED TODAY (${formattedDate})`.toUpperCase();
+  document.getElementById('completedTodayserviceTypeModalLabel').innerHTML = title;
+
+  // AJAX request
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_completed_today_by_division',
+      region_id: regional_code,
+      division: division
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division);
+
+      // Handle no data case
+      // if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+      //   console.log("No data found");
+      //   $('#completed_serviceType_Table').DataTable().clear().destroy();
+      //   $('#completed_serviceType_Table').html('<tr><td colspan="3" class="text-center text-muted">No applications completed today for this region.</td></tr>');
+      //   return;
+      // }
+
+      // Sort results by total descending
+      json_result.apps_at_division.sort((a, b) => b.total - a.total);
+
+      let dataSet6 = [];
+
+      // Destroy existing DataTable
+      $('#completed_serviceType_Table').DataTable().clear().destroy();
+
+      // Populate new rows
+      json_result.apps_at_division.forEach(serviceData => {
+        const service_type = serviceData.service_type;
+        const total = serviceData.total;
+
+        const action = `
+          <a href="javascript:void(0)"
+             data-id="${serviceData.service_type}"
+              data-rg="${regional_name}"
+             id="apps_completed_today_servicetype"
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+            <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet6.push([service_type, total, action]);
+      });
+
+      // Initialize DataTable
+      $('#completed_serviceType_Table').DataTable({
+        data: dataSet6,
+        dom: 'Bfrtip',
+        order: [[1, 'desc']], // sort by total descending
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        buttons: [
+          { extend: 'copy', title: title },
+          { extend: 'csv', title: title },
+          { extend: 'excel', title: title },
+          { extend: 'pdf', title: title },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '',
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(`
+                  <h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                  <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                    This report is generated using the Enterprise Land Information System
+                  </p>
+                `)
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // { extend: 'colvis', text: 'Show / Hide Columns' },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+});
+
+
+
+
+
+
+
+// $(document).on('click','#view_recieved_today_by_service',function(e){
+//   e.preventDefault();
+ 
+// $("#applicationsModal").modal("show");  
+
+
+// const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+// const currentDate = new Date();
+// const day = currentDate.getDate();
+// const monthIndex = currentDate.getMonth();
+// const year = currentDate.getFullYear();
+// const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+
+//   var regional_code = $('#director_regional_code').val();
+//   // var division = $('#director_division').val();
+
+//   var service_type=$(this).data('id');
+
+
+//   var title  = service_type+" "+"Applications Received Today"+" "+formattedDate;
+
+//   document.getElementById('applicationsModalLabel').innerHTML = title;
+
+// //  console.log(service_type);
+
+
+//  let dataSet51 = [];
+//  let num51 = 0;
+
+// $('#view_applications_by_service_type').DataTable().clear().destroy();
+
+//  $.ajax({
+//      type : "POST",
+//      url : "director_dashboard",
+//      data : {
+//          request_type : 'director_report_dashboard_created_day_by_service_type',
+//          region_id : regional_code,
+//          service_type : service_type
+//      },
+//      cache: false,
+//      success: function(response) {
+
+//       //console.log(response)
+
+//          var json_result = JSON.parse(response);
+//          console.log(json_result)
+
+//          if (json_result.apps_at_division == ""){
+
+//           //console.log("data not found");       
+
+// }else {
+
+//   for(let i=0; i<json_result.apps_at_division.length; i++) {
+//     let html = [];
+//     num51 = +num51 + 1;
+
+//     let job_number = json_result.apps_at_division[i].job_number;
+//     let ar_name = json_result.apps_at_division[i].ar_name;
+//     let business_process_name = json_result.apps_at_division[i].business_process_name;
+//     let created_date = json_result.apps_at_division[i].created_date;
+//     let due_date = json_result.apps_at_division[i].due_date;
+//     let days_due = json_result.apps_at_division[i].days_due;
+//     let days_since_batched = json_result.apps_at_division[i].days_since_batched;
+//   //  let action = ' <a href="#" class="btn btn-secondary">View <i class="fa fa-eye"></i></a>';
+//     // let payment_status = e[i].payment_status;
+//     // let buttons = e[i].buttons;
+    
+
+//     html.push(job_number);
+//     html.push(ar_name);
+//     html.push(business_process_name);
+//     html.push(created_date);
+//     html.push(due_date);
+//     html.push(days_due);
+//     html.push(days_since_batched);
+//   //   html.push(action);
+
+//     dataSet51.push(html);
+
+//   //console.log(dataSet)
+//   }
+
+// // let dataTable_Obj = $('#recievedtoday').DataTable({
+// //     data: dataSet1
+// //   })
+
+//   $('#view_applications_by_service_type').DataTable().clear().destroy();
+                
+//   $('#view_applications_by_service_type').DataTable({ data: dataSet51,
+//     dom : 'Bfrtip',
+//     lengthMenu : [
+//         [ 10, 25, 50, -1 ],
+//         [ '10 rows', '25 rows',
+//             '50 rows', 'Show all' ] ],
+//     buttons : [ 'pageLength', 'copy',
+//         'csv', 'excel', 'pdf', 'print' ] }).draw();
+
+// }
+        
+
+         
+
+
+//      }
+//  })
+
+
+
+// });
+
+
+
+
+
+$('#completed_today_service').on('click', function(e) {
+  e.preventDefault();
+
+// $("#completedTodayserviceTypeModal").modal("show");  
+// const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+// const currentDate = new Date();
+// const day = currentDate.getDate();
+// const monthIndex = currentDate.getMonth();
+// const year = currentDate.getFullYear();
+// const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+
+//   var regional_code = $('#director_regional_code').val();
+//   var division = $('#director_division').val();
+
+//   var title  = division+"'"+'s'+" "+"Applications Completed Today"+" "+formattedDate;
+
+//   document.getElementById('completedTodayserviceTypeModalLabel').innerHTML = title;
+
+  
+//  //console.log(regional_code,division);
+
+
+
+//   $.ajax({
+//       type : "POST",
+//       url : "director_dashboard",
+//       data : { 
+//           request_type : 'director_report_dashboard_completed_today_by_division',
+//           region_id : regional_code.trim(),
+//           division:division
+//       },
+//       cache: false,
+//       success: function(response) {
+//         console.log(response);
+
+//           var json_result = JSON.parse(response);
+
+//           console.log(json_result.apps_at_division);
+
+//           if (json_result.apps_at_division == ''){
+
+//               //.log("data not found");       
+
+// }else {
+
+//   let dataSet6 = [];
+//   let num6 = 0;
+
+// $('#completed_serviceType_Table').DataTable().clear().destroy();
+
+//   for(let i=0; i<json_result.apps_at_division.length; i++) {
+//       let html = [];
+//       num6 = +num6 + 1;
+
+//       let service_type = json_result.apps_at_division[i].service_type;
+//       let total = json_result.apps_at_division[i].total;
+//       let action = `<a href="javascript:void(0)" data-id="${json_result.apps_at_division[i].service_type}"  id="apps_completed_today_servicetype"  
+//       class="btn btn-secondary">View <i class="fa fa-eye"></i></a> `
+
+//       // let payment_status = e[i].payment_status;
+//       // let buttons = e[i].buttons;
+//       html.push(service_type);
+//       html.push(total);
+//       html.push(action);
+
+//       dataSet6.push(html);
+
+//     ///console.log(dataSet1)
+//     }
+
+//   // let dataTable_Obj = $('#recievedtoday').DataTable({
+//   //     data: dataSet1
+//   //   })
+
+//     $('#completed_serviceType_Table').DataTable().clear().destroy();
+                  
+//     $('#completed_serviceType_Table').DataTable({ data: dataSet6,
+//       dom : 'Bfrtip',
+//       lengthMenu : [
+//           [ 10, 25, 50, -1 ],
+//           [ '10 rows', '25 rows',
+//               '50 rows', 'Show all' ] ],
+//       buttons : [ 'pageLength', 'copy',
+//           'csv', 'excel', 'pdf', 'print' ] }).draw();
+
+// }
+
+
+//       }
+//   })
+
+
+
+})
+
+
+
+
+
+
+$(document).on('click', '#apps_completed_today_servicetype', function (e) {
+  e.preventDefault();
+
+  // Show modal
+  $("#applicationsModalCompletedToday").modal("show");
+
+  // Prepare date info
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const currentDate = new Date();
+  const day = currentDate.getDate();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+  const formattedDate = `${day} ${months[monthIndex]} ${year}`;
+
+  // Extract data
+  const regional_code = $('#today_region_id').val();
+  const service_type = $(this).data('id');
+    const compregionNAme = $(this).data('rg');
+
+
+  // Title (uppercase)
+  const title = `${service_type} COMPLETED TODAY (${formattedDate}) FROM ${compregionNAme}`.toUpperCase();
+  document.getElementById('applicationsModalLabelCompletedToday').innerHTML = title;
+
+  // Destroy any existing DataTable
+  $('#view_applications_completed_today_by_service_type').DataTable().clear().destroy();
+
+  // AJAX Request
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: 'director_report_dashboard_completed_today_by_service_type',
+      region_id: regional_code,
+      service_type: service_type
+    },
+    cache: false,
+    success: function (response) {
+      const json_result = JSON.parse(response);
+      console.log(json_result);
+
+      // Handle no data case
+      if (!json_result.apps_at_division || json_result.apps_at_division.length === 0) {
+        console.log("No data found");
+        $('#view_applications_completed_today_by_service_type').DataTable().clear().destroy();
+        $('#view_applications_completed_today_by_service_type').html(`
+          <tr>
+            <td colspan="7" class="text-center text-muted">
+              No applications completed today for this service type.
+            </td>
+          </tr>
+        `);
+        return;
+      }
+
+      // Sort results by turnaround_days descending
+      json_result.apps_at_division.sort((a, b) => b.turnaround_days - a.turnaround_days);
+
+      const dataSet7 = json_result.apps_at_division.map(app => {
+        const action = `
+        <td class="text-end">
+					<div class="dropdown">
+						<a href="javascript:void(0);"
+						class="btn btn-icon btn-sm btn-primary border action-btn""
+						data-bs-toggle="dropdown"
+						data-bs-display="static"
+						aria-expanded="false">
+							<i class="ri-more-2-line"></i>
+						</a>
+
+						<ul class="dropdown-menu dropdown-menu-end table-dropdown" data-popper-placement="bottom-end">
+
+							<!-- Cabinet -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								data-bs-toggle="modal"
+								data-bs-target="#cabinetModal"
+								data-target-id="${escapeHtml(app.job_number || '')}">
+									<i class="ri-hard-drive-2-line me-2"></i>
+									Track
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+						
+					
+
+							<!-- Application Details (Form Submit) -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								onclick="viewApplicationDetails('${app.job_number}','${app.transaction_number}','${app.case_number}','${app.business_process_sub_name}')">
+									<i class="ri-information-line me-2"></i>
+									Application Details
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+							
+
+						</ul>
+					</div>
+				</td>`;
+
+        return [
+          app.job_number,
+          app.ar_name,
+          app.business_process_name,
+          app.created_date,
+          app.completed_date,
+          app.turnaround_days,
+          action
+        ];
+      });
+
+      // Initialize DataTable
+      $('#view_applications_completed_today_by_service_type').DataTable({
+        data: dataSet7,
+        dom: 'Bfrtip',
+        order: [[5, 'desc']], // sort by turnaround days descending
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ['10 rows', '25 rows', '50 rows', 'Show all']
+        ],
+        buttons: [
+          { extend: 'copy', title: title },
+          { extend: 'csv', title: title },
+          { extend: 'excel', title: title },
+          { extend: 'pdf', title: title },
+          {
+            extend: 'print',
+            text: 'Print',
+            title: '',
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(`
+                  <h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                  <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                    This report is generated using the Enterprise Land Information System
+                  </p>
+                `)
+                .css('font-size', '19px');
+
+              $(win.document.body).find('table')
+                .addClass('compact')
+                .css('font-size', '19px')
+                .css('width', '100%');
+            }
+          },
+          // { extend: 'colvis', text: 'Show / Hide Columns' },
+          'pageLength'
+        ]
+      }).draw();
+    }
+  });
+});
+
+
+
+
+$('#apps_completed_month_division').on('click', function(e) {
+  e.preventDefault();
+
+  $("#regionsModal").modal("show");  
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',  
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];        const currentDate = new Date();
+  const day = currentDate.getDate();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+  const formattedDate = `${months[monthIndex]}`;
+  
+  
+      var division = $('#director_division').val();
+  
+      var title  = division+"'"+'s'+" "+"Applications Completed This Month"+" "+formattedDate;
+  
+      document.getElementById('regionsModalLabel').innerHTML = title;
+  
+      
+     //console.log(regional_code,division);
+  
+      $.ajax({
+          type : "POST",
+          url : "director_dashboard",
+          data : { 
+              request_type : 'director_report_dashboard_completed_month_by_regions',
+              division:division
+          },
+          cache: false,
+          success: function(response) {
+             // console.log(response);
+  
+              var json_result = JSON.parse(response);
+  
+              console.log(json_result.apps_at_division);
+  
+              if (json_result.apps_at_division == ''){
+  
+                  //.log("data not found");       
+  
+  }else {
+  
+      let dataSet1 = [];
+      let num1 = 0;
+  
+    $('#region_table').DataTable().clear().destroy();
+  
+      for(let i=0; i<json_result.apps_at_division.length; i++) {
+          let html = [];
+          num1 = +num1 + 1;
+  
+          let region = json_result.apps_at_division[i].region;
+          let total = json_result.apps_at_division[i].total;
+          // let action = `<a href="javascript:void(0)" data-id="${json_result.apps_at_division[i].region_code}" data-regionname ="${json_result.apps_at_division[i].region}"  id="view_completed_month_by_region"  
+          // class="btn btn-secondary">View <i class="fa fa-eye"></i></a> `
+          let action = `
+          <a href="javascript:void(0)" data-id="${json_result.apps_at_division[i].region_code}" data-regionname ="${json_result.apps_at_division[i].region}"  id="view_completed_month_by_region"  
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+              <i class="fa fa-info-circle"></i>Details
+          </a>`;
+
+
+  
+          // let payment_status = e[i].payment_status;
+          // let buttons = e[i].buttons;
+          html.push(region);
+          html.push(total);
+          html.push(action);
+  
+          dataSet1.push(html);
+  
+        ///console.log(dataSet1)
+        }
+  
+      // let dataTable_Obj = $('#recievedtoday').DataTable({
+      //     data: dataSet1
+      //   })
+  
+        $('#region_table').DataTable().clear().destroy();
+                      
+        $('#region_table').DataTable({ data: dataSet1,
+          dom : 'Bfrtip',
+          lengthMenu : [
+              [ 10, 25, 50, -1 ],
+              [ '10 rows', '25 rows',
+                  '50 rows', 'Show all' ] ],
+          buttons : [ 'pageLength', 'copy',
+              'csv', 'excel', 'pdf', 'print' ] }).draw();
+  
+   }
+  
+  
+          }
+      })
+
+
+})
+
+
+
+
+
+$(document).on('click','#view_completed_month_by_region',function(e){
+  e.preventDefault();
+ 
+  $("#completedMonthserviceTypeModal").modal("show");  
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',  
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];      const currentDate = new Date();
+  const day = currentDate.getDate();
+  const monthIndex = currentDate.getMonth();
+  const year = currentDate.getFullYear();
+  const formattedDate = `${months[monthIndex]}`;
+  
+  
+      var regional_code=$(this).data('id');
+      var regional_name=$(this).data('regionname');
+
+
+
+      $("#today_region_id").val(regional_code);
+
+
+      // today_region_id
+
+
+      var division = $('#director_division').val();
+  
+      var title  = regional_name+"'"+'s'+" "+"Applications Completed Month"+" "+formattedDate;
+    
+      document.getElementById('completedMonthserviceTypeModalLabel').innerHTML = title;
+
+  
+      
+     //console.log(regional_code,division);
+  
+     $.ajax({
+      type : "POST",
+      url : "director_dashboard",
+      data : { 
+          request_type : 'director_report_dashboard_completed_month_by_division',
+          region_id : regional_code,
+          division:division
+      },
+      cache: false,
+      success: function(response) {
+        console.log(response);
+
+          var json_result = JSON.parse(response);
+
+          console.log(json_result.apps_at_division);
+
+          if (json_result.apps_at_division == ''){
+
+              //.log("data not found");       
+
+}else {
+
+  let dataSet8 = [];
+  let num8 = 0;
+
+$('#completed_MonthserviceType_Table').DataTable().clear().destroy();
+
+  for(let i=0; i<json_result.apps_at_division.length; i++) {
+      let html = [];
+      num8 = +num8 + 1;
+
+      let service_type = json_result.apps_at_division[i].service_type;
+      let total = json_result.apps_at_division[i].total;
+      // let action = `<a href="javascript:void(0)" data-id="${json_result.apps_at_division[i].service_type}"  id="apps_completed_month_servicetype"  
+      // class="btn btn-secondary">View <i class="fa fa-eye"></i></a> `
+
+      let action = `
+      <a href="javascript:void(0)" data-id="${json_result.apps_at_division[i].service_type}"  id="apps_completed_month_servicetype"  
+         class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+          <i class="fa fa-info-circle"></i>Details
+      </a>`;
+
+
+      // let payment_status = e[i].payment_status;
+      // let buttons = e[i].buttons;
+      html.push(service_type);
+      html.push(total);
+      html.push(action);
+
+      dataSet8.push(html);
+
+    ///console.log(dataSet1)
+    }
+
+  // let dataTable_Obj = $('#recievedtoday').DataTable({
+  //     data: dataSet1
+  //   })
+
+    $('#completed_MonthserviceType_Table').DataTable().clear().destroy();
+                  
+    $('#completed_MonthserviceType_Table').DataTable({ data: dataSet8,
+      dom : 'Bfrtip',
+      lengthMenu : [
+          [ 10, 25, 50, -1 ],
+          [ '10 rows', '25 rows',
+              '50 rows', 'Show all' ] ],
+      buttons : [ 'pageLength', 'copy',
+          'csv', 'excel', 'pdf', 'print' ] }).draw();
+
+}
+
+
+      }
+  })
+
+  
+
+
+});
+
+
+
+
+
+
+
+
+$(document).on('click','#apps_completed_month_servicetype',function(e){
+  e.preventDefault();
+ 
+$("#applicationsModalCompletedMonth").modal("show");  
+
+
+const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const currentDate = new Date();
+const day = currentDate.getDate();
+const monthIndex = currentDate.getMonth();
+const year = currentDate.getFullYear();
+const formattedDate = `${months[monthIndex]}`;
+
+
+  var regional_code = $('#today_region_id').val();
+  // var division = $('#director_division').val();
+
+  var service_type=$(this).data('id');
+
+
+  var title  = service_type+" "+"Applications Completed This Month"+" "+formattedDate;
+
+  document.getElementById('applicationsModalLabelCompletedMonth').innerHTML = title;
+
+//  console.log(service_type);
+
+
+ let dataSet9 = [];
+ let num9 = 0;
+
+$('#view_applications_completed_month_by_service_type').DataTable().clear().destroy();
+
+ $.ajax({
+     type : "POST",
+     url : "director_dashboard",
+     data : {
+         request_type : 'director_report_dashboard_completed_month_by_service_type',
+         region_id : regional_code,
+         service_type : service_type
+     },
+     cache: false,
+     success: function(response) {
+
+      //console.log(response)
+
+         var json_result = JSON.parse(response);
+         console.log(json_result)
+
+         if (json_result.apps_at_division == ""){
+
+          //console.log("data not found");       
+
+}else {
+
+  for(let i=0; i<json_result.apps_at_division.length; i++) {
+    let html = [];
+    num9 = +num9 + 1;
+
+    let job_number = json_result.apps_at_division[i].job_number;
+    let ar_name = json_result.apps_at_division[i].ar_name;
+    let business_process_name = json_result.apps_at_division[i].business_process_name;
+    let created_date = json_result.apps_at_division[i].created_date;
+    let completed_date = json_result.apps_at_division[i].completed_date;
+    let days_due = json_result.apps_at_division[i].days_due;
+    // let days_since_batched = json_result.apps_at_division[i].days_since_batched;
+   let action = ` <div class="btn-group" role="group">
+   <button type="button" class="btn btn-secondary dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+     Actions
+   </button>
+   <div class="dropdown-menu">
+   <form class="d-inline" target="_blank" action="front_office_view_application" method="post">
+           <input type="hidden" name="case_number" id="case_number" value="${json_result.apps_at_division[i].transaction_number}">
+           <input type="hidden" name="search_text" id="search_text" value="${json_result.apps_at_division[i].case_number}">
+           <input type="hidden" name="job_number" id="job_number" value=""${json_result.apps_at_division[i].job_number}">
+           <input type="hidden" name="business_process_sub_name" id="business_process_sub_name" value=""${json_result.apps_at_division[i].case_number}">
+           <button type="submit" name="save" class="dropdown-item" >Application Details <i class="fas fa-info-circle"></i></button>
+         </form> 
+   </div>
+ </div`;
+    // let payment_status = e[i].payment_status;
+    // let buttons = e[i].buttons;
+    
+
+    html.push(job_number);
+    html.push(ar_name);
+    html.push(business_process_name);
+    html.push(created_date);
+    html.push(completed_date);
+    html.push(days_due);
+    html.push(action);
+  //   html.push(action);
+
+    dataSet9.push(html);
+
+  //console.log(dataSet)
+  }
+
+// let dataTable_Obj = $('#recievedtoday').DataTable({
+//     data: dataSet1
+//   })
+
+  $('#view_applications_completed_month_by_service_type').DataTable().clear().destroy();
+                
+  $('#view_applications_completed_month_by_service_type').DataTable({ data: dataSet9,
+    dom : 'Bfrtip',
+    lengthMenu : [
+        [ 10, 25, 50, -1 ],
+        [ '10 rows', '25 rows',
+            '50 rows', 'Show all' ] ],
+    buttons : [ 'pageLength', 'copy',
+        'csv', 'excel', 'pdf', 'print' ] }).draw();
+
+}
+        
+
+         
+
+
+     }
+ })
+
+
+
+});
+
+
+
+
+
+$(document).on("click", ".showServiceTypeModal_apps_pastdue", function (event) {
+  event.preventDefault();
+
+  $("#unitModal").modal("show");
+
+  var Region_name = $(this).data("type");
+  var users_division = $(this).data("regdivision");
+  var regioncode = $(this).data("regcode");
+
+  $("#director_regional_code").val(regioncode);
+  var regional_code = $("#director_regional_code").val();
+
+  console.log(users_division, regioncode);
+
+  // Get date range from inputs
+  let startDate = $("#start_date").val();
+  let endDate = $("#end_date").val();
+  let newdatestart = $('#startdate').val();
+    let  newdateend = $('#enddate').val();
+
+
+
+  // Format title (uppercase and includes date range)
+  var title = (
+    Region_name +
+    "'S APPLICATIONS PAST DUE FROM " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  // Set modal header
+  document.getElementById("divisionLabelCompletedYear").innerHTML = title;
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "director_compliance_apps_pastdue_units",
+      region_id: regional_code.trim(),
+      division: users_division,
+      date_from: startDate,
+      date_to: endDate,
+    },
+    cache: false,
+    success: function (response) {
+      var json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division_unit);
+
+      if (!json_result.apps_at_division_unit || json_result.apps_at_division_unit.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      let dataSet15 = [];
+      let num15 = 0;
+
+      $("#apps_past_due_unit").DataTable().clear().destroy();
+
+      for (let i = 0; i < json_result.apps_at_division_unit.length; i++) {
+        num15 += 1;
+        let unit = json_result.apps_at_division_unit[i].unit_name;
+        let total = json_result.apps_at_division_unit[i].total;
+
+        let action = `
+          <a href="javascript:void(0)" 
+             data-id="${json_result.apps_at_division_unit[i].unit_id}" 
+             data-name="${json_result.apps_at_division_unit[i].unit_name}"  
+             id="view_apps_pastdue_within_units"  
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+              <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet15.push([unit, total, action]);
+      }
+
+      // Initialize DataTable with export buttons and custom print header
+      $("#apps_past_due_unit").DataTable({
+        data: dataSet15,
+          order: [[1, 'desc']],   // column index 1 = Total
+
+        dom: "Bfrtip",
+        lengthMenu: [
+          [10, 25, 50, -1],
+          ["10 rows", "25 rows", "50 rows", "Show all"],
+        ],
+        buttons: [
+          {
+            extend: "copy",
+            title: title,
+          },
+          {
+            extend: "csv",
+            title: title,
+          },
+          {
+            extend: "excel",
+            title: title,
+          },
+          {
+            extend: "pdf",
+            title: title,
+          },
+          {
+            extend: "print",
+            text: "Print",
+            title: "",
+            customize: function (win) {
+              $(win.document.body)
+                .prepend(
+                  `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                   <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                   This report is generated using the Enterprise Land Information System
+                   </p>`
+                )
+                .css("font-size", "19px");
+
+              $(win.document.body)
+                .find("table")
+                .addClass("compact")
+                .css("font-size", "19px")
+                .css("width", "100%");
+            },
+          },
+          // {
+          //   extend: "colvis",
+          //   text: "Show / Hide Columns",
+          // },
+          "pageLength",
+        ],
+      }).draw();
+    },
+  });
+});
+
+
+
+
+
+
+$(document).on("click", "#view_apps_pastdue_within_units", function (e) {
+  e.preventDefault();
+
+  $("#officerModal").modal("show");
+
+  // Get dates from inputs
+  let startDate = $("#start_date").val();
+  let endDate = $("#end_date").val();
+  let newdatestart = $('#startdate').val();
+    let  newdateend = $('#enddate').val();
+
+  // Get region, division, and unit details
+  let regional_code = $("#director_regional_code").val();
+  let users_division = $("#director_division").val();
+  let unit_id = $(this).data("id");
+  let name = $(this).data("name");
+
+  console.log(unit_id, regional_code, users_division);
+
+  // Build uppercase title with date range
+  let title = (
+    name +
+    "'S APPLICATIONS PAST DUE FROM " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  // Apply title to modal header
+  document.getElementById("officerModalLabel").innerHTML = title;
+
+  // Initialize DataTable setup
+  let dataSet16 = [];
+  let num16 = 0;
+  $("#past_due_officers_table").DataTable().clear().destroy();
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "director_compliance_apps_pastdue_within_unit",
+      region_id: regional_code,
+      division: users_division,
+      unit: name,
+      date_from: startDate,
+      date_to: endDate,
+    },
+    cache: false,
+    success: function (response) {
+      let json_result = JSON.parse(response);
+      console.log(json_result);
+
+      if (
+        !json_result.apps_at_unit ||
+        json_result.apps_at_unit.length === 0
+      ) {
+        console.log("No data found");
+        return;
+      }
+
+      // Build dataset
+      for (let i = 0; i < json_result.apps_at_unit.length; i++) {
+        num16 += 1;
+        let staff = json_result.apps_at_unit[i].staff;
+        let total = json_result.apps_at_unit[i].total;
+
+        let action = `
+          <a href="javascript:void(0)" 
+             id="past_due_apps"  
+             data-id="${json_result.apps_at_unit[i].staff_id}"  
+             data-name="${json_result.apps_at_unit[i].staff}"
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+              <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet16.push([staff, total, action]);
+      }
+
+      // Initialize DataTable with export buttons and print header
+      $("#past_due_officers_table")
+        .DataTable({
+          data: dataSet16,
+            order: [[1, 'desc']],   // column index 1 = Total
+          dom: "Bfrtip",
+          lengthMenu: [
+            [10, 25, 50, -1],
+            ["10 rows", "25 rows", "50 rows", "Show all"],
+          ],
+          buttons: [
+            {
+              extend: "copy",
+              title: title,
+            },
+            {
+              extend: "csv",
+              title: title,
+            },
+            {
+              extend: "excel",
+              title: title,
+            },
+            {
+              extend: "pdf",
+              title: title,
+            },
+            {
+              extend: "print",
+              text: "Print",
+              title: "",
+              customize: function (win) {
+                $(win.document.body)
+                  .prepend(
+                    `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                     <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                     This report is generated using the Enterprise Land Information System
+                     </p>`
+                  )
+                  .css("font-size", "19px");
+
+                $(win.document.body)
+                  .find("table")
+                  .addClass("compact")
+                  .css("font-size", "19px")
+                  .css("width", "100%");
+              },
+            },
+            // {
+            //   extend: "colvis",
+            //   text: "Show / Hide Columns",
+            // },
+            "pageLength",
+          ],
+        })
+        .draw();
+    },
+  });
+});
+
+
+
+
+
+
+
+
+$(document).on("click", "#past_due_apps", function (e) {
+  e.preventDefault();
+
+  $("#past_due_apps_modal").modal("show");
+
+  // Get date inputs
+  let startDate = $("#start_date").val();
+  let endDate = $("#end_date").val();
+  let newdatestart = $("#startdate").val();
+  let newdateend = $("#enddate").val();
+
+  // Get staff and context info
+  let staff_id = $(this).data("id");
+  let staff_name = $(this).data("name");
+  let users_division = $("#director_division").val();
+  let regional_code = $("#director_regional_code").val();
+
+  console.log(staff_id, regional_code, users_division);
+
+  // Build uppercase title with date range
+  let title = (
+    staff_name +
+    "'S APPLICATIONS PAST DUE FROM " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  // Set modal title
+  document.getElementById("past_due_apps_Label").innerHTML = title;
+
+  // Initialize DataTable setup
+  let dataSet17 = [];
+  let num17 = 0;
+  $("#past_due_apps_with_staff").DataTable().clear().destroy();
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "director_compliance_apps_pastdue_with_officer",
+      staff_id: staff_id,
+      division: users_division,
+      region_code: regional_code,
+      date_from: startDate,
+      date_to: endDate,
+    },
+    cache: false,
+    success: function (response) {
+      let json_result = JSON.parse(response);
+      console.log(json_result);
+
+      if (
+        !json_result.apps_with_staff ||
+        json_result.apps_with_staff.length === 0
+      ) {
+        console.log("No data found");
+        return;
+      }
+
+      let jobNumbers = [];
+
+      for (let i = 0; i < json_result.apps_with_staff.length; i++) {
+        num17 += 1;
+        let app = json_result.apps_with_staff[i];
+
+        jobNumbers.push(app.job_number);
+         let checkbox = `
+    <input type="checkbox" class="app-checkbox form-check-input" value="${app.job_number}">
+  `;
+
+          const action = `
+        <td class="text-end">
+					<div class="dropdown">
+						<a href="javascript:void(0);"
+						class="btn btn-icon btn-sm btn-primary border action-btn""
+						data-bs-toggle="dropdown"
+						data-bs-display="static"
+						aria-expanded="false">
+							<i class="ri-more-2-line"></i>
+						</a>
+
+						<ul class="dropdown-menu dropdown-menu-end table-dropdown" data-popper-placement="bottom-end">
+
+							<!-- Cabinet -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								data-bs-toggle="modal"
+								data-bs-target="#cabinetModal"
+								data-target-id="${escapeHtml(app.job_number || '')}">
+									<i class="ri-hard-drive-2-line me-2"></i>
+									Track
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+
+               <li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+                data-receiver_name="${staff_name}" 
+                 data-officer_name="${staff_name}"
+                  data-officer_id="${staff_id}" 
+                  id="messageReply"
+                  data-job_number="${app.job_number}"> 
+								    <i class="ri-reply-line"></i>
+                  Notice & Replies
+								</a>
+							</li>
+
+						
+              	<li><hr class="dropdown-divider"></li>
+
+						
+					
+
+							<!-- Application Details (Form Submit) -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								onclick="viewApplicationDetails('${app.job_number}','${app.transaction_number}','${app.case_number}','${app.business_process_sub_name}')">
+									<i class="ri-information-line me-2"></i>
+									Application Details
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+							
+
+						</ul>
+					</div>
+				</td>`;
+        dataSet17.push([
+          checkbox,
+          app.job_number,
+          app.ar_name,
+          app.created_date,
+           app.days_due,
+          app.due_date,
+          app.days_since_batched,
+          app.job_status,
+          action,
+        ]);
+      }
+
+      // Generate Send Message Button
+      let jobNumbersString = jobNumbers.join(",");
+      let pdfBtn = `
+       <button class="btn btn-primary ms-auto sendMessage" 
+                        data-officer_id="${staff_id}"
+                        data-receiver_name="${staff_name}"
+                        data-officer_name="${staff_name}">
+                    <i class="bi bi-chat-text"></i> Select & Send Message
+                </button>`;
+      document.getElementById("sendmsg").innerHTML = pdfBtn;
+
+      // Initialize DataTable with full export + print formatting
+      $("#past_due_apps_with_staff")
+        .DataTable({
+          data: dataSet17,
+          dom: "Bfrtip",
+          lengthMenu: [
+            [10, 25, 50, -1],
+            ["10 rows", "25 rows", "50 rows", "Show all"],
+          ],
+          buttons: [
+            {
+              extend: "copy",
+              title: title,
+            },
+            {
+              extend: "csv",
+              title: title,
+            },
+            {
+              extend: "excel",
+              title: title,
+            },
+            {
+              extend: "pdf",
+              title: title,
+            },
+            {
+              extend: "print",
+              text: "Print",
+              title: "",
+              customize: function (win) {
+                $(win.document.body)
+                  .prepend(
+                    `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                     <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                     This report is generated using the Enterprise Land Information System
+                     </p>`
+                  )
+                  .css("font-size", "19px");
+
+                $(win.document.body)
+                  .find("table")
+                  .addClass("compact")
+                  .css("font-size", "19px")
+                  .css("width", "100%");
+              },
+            },
+            // {
+            //   extend: "colvis",
+            //   text: "Show / Hide Columns",
+            // },
+            "pageLength",
+          ],
+        })
+        .draw();
+    },
+  });
+});
+
+
+
+
+
+$(document).on("click", ".showServiceTypeModal_apps_with_divisions", function (event) {
+  event.preventDefault();
+
+  $("#unitModal").modal("show");
+
+  // Date values
+  let startDate = $("#start_date").val();
+  let endDate = $("#end_date").val();
+  let newdatestart = $("#startdate").val();
+  let newdateend = $("#enddate").val();
+
+  // Region and division info
+  let Region_name = $(this).data("type");
+  let users_division = $(this).data("regdivision");
+  let regioncode = $(this).data("regcode");
+
+  $("#director_regional_code").val(regioncode);
+  let regional_code = $("#director_regional_code").val();
+
+  console.log(users_division, regional_code);
+
+  // Build uppercase title with date range
+  let title = (
+    Region_name +
+    "'S APPLICATIONS WITH " + "UNITS " + "FROM " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  document.getElementById("divisionLabelCompletedYear").innerHTML = title;
+
+  // AJAX request
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "director_compliance_apps_with_division_units",
+      region_id: regional_code.trim(),
+      division: users_division,
+      date_from: startDate,
+      date_to: endDate,
+    },
+    cache: false,
+    success: function (response) {
+      let json_result = JSON.parse(response);
+      console.log(json_result.apps_at_division_unit);
+
+      if (!json_result.apps_at_division_unit || json_result.apps_at_division_unit.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      let dataSet15 = [];
+      let num15 = 0;
+
+      $("#apps_past_due_unit").DataTable().clear().destroy();
+
+      for (let i = 0; i < json_result.apps_at_division_unit.length; i++) {
+        num15++;
+
+        let unit = json_result.apps_at_division_unit[i].unit_name;
+        let total = json_result.apps_at_division_unit[i].total;
+
+        let action = `
+          <a href="javascript:void(0)" 
+             data-id="${json_result.apps_at_division_unit[i].unit_id}" 
+             data-name="${json_result.apps_at_division_unit[i].unit_name}"  
+             data-reg="${Region_name}"
+             id="view_apps_withdivision_within_units"
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+            <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet15.push([unit, total, action]);
+      }
+
+      // Initialize DataTable with export buttons
+      $("#apps_past_due_unit")
+        .DataTable({
+          data: dataSet15,
+            order: [[1, 'desc']],   // column index 1 = Total
+          dom: "Bfrtip",
+          lengthMenu: [
+            [10, 25, 50, -1],
+            ["10 rows", "25 rows", "50 rows", "Show all"],
+          ],
+          buttons: [
+            {
+              extend: "copy",
+              title: title,
+            },
+            {
+              extend: "csv",
+              title: title,
+            },
+            {
+              extend: "excel",
+              title: title,
+            },
+            {
+              extend: "pdf",
+              title: title,
+            },
+            {
+              extend: "print",
+              text: "Print",
+              title: "",
+              customize: function (win) {
+                $(win.document.body)
+                  .prepend(
+                    `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                     <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                       This report is generated using the Enterprise Land Information System
+                     </p>`
+                  )
+                  .css("font-size", "19px");
+
+                $(win.document.body)
+                  .find("table")
+                  .addClass("compact")
+                  .css("font-size", "19px")
+                  .css("width", "100%");
+              },
+            },
+            // {
+            //   extend: "colvis",
+            //   text: "Show / Hide Columns",
+            // },
+            "pageLength",
+          ],
+        })
+        .draw();
+    },
+  });
+});
+
+
+
+
+
+
+
+$(document).on("click", "#view_apps_withdivision_within_units", function (e) {
+  e.preventDefault();
+
+  $("#officerModal").modal("show");
+
+  // Get date values
+  let startDate = $("#start_date").val();
+  let endDate = $("#end_date").val();
+  let newdatestart = $("#startdate").val();
+  let newdateend = $("#enddate").val();
+
+  // Get region and division info
+  let regional_code = $("#director_regional_code").val();
+  let unit_id = $(this).data("id");
+  let name = $(this).data("name");
+  let regName = $(this).data("reg");
+
+  
+  let users_division = $("#director_division").val();
+
+  console.log("Unit ID:", unit_id, "Region:", regional_code, "Division:", users_division);
+
+  // Build uppercase title with date range
+  let title = (
+   regName + " "+ name +
+    "'S APPLICATIONS WITH " + " " + "OFFICERS FROM " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  document.getElementById("officerModalLabel").innerHTML = title;
+
+  // Prepare DataTable
+  $("#past_due_officers_table").DataTable().clear().destroy();
+
+  // AJAX request
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "director_compliance_apps_withdivision_within_unit",
+      region_id: regional_code,
+      division: users_division,
+      unit: name,
+      date_from: startDate,
+      date_to: endDate,
+    },
+    cache: false,
+    success: function (response) {
+      let json_result = JSON.parse(response);
+      console.log(json_result);
+
+      if (!json_result.apps_at_unit || json_result.apps_at_unit.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      let dataSet16 = [];
+      let num16 = 0;
+
+      // Build rows
+      for (let i = 0; i < json_result.apps_at_unit.length; i++) {
+        num16++;
+
+        let staff = json_result.apps_at_unit[i].staff;
+        let total = json_result.apps_at_unit[i].total;
+
+        let action = `
+          <a href="javascript:void(0)" 
+             id="division_apps"
+             data-id="${json_result.apps_at_unit[i].staff_id}" 
+             data-name="${json_result.apps_at_unit[i].staff}" 
+             data-reg="${regName}"
+             class="btn btn-secondary shadow-sm px-3 py-2 rounded-lg">
+            <i class="fa fa-info-circle"></i> Details
+          </a>`;
+
+        dataSet16.push([staff, total, action]);
+      }
+
+      // Initialize DataTable
+      $("#past_due_officers_table")
+        .DataTable({
+          data: dataSet16,
+            order: [[1, 'desc']],   // column index 1 = Total
+          dom: "Bfrtip",
+          lengthMenu: [
+            [10, 25, 50, -1],
+            ["10 rows", "25 rows", "50 rows", "Show all"],
+          ],
+          buttons: [
+            {
+              extend: "copy",
+              title: title,
+            },
+            {
+              extend: "csv",
+              title: title,
+            },
+            {
+              extend: "excel",
+              title: title,
+            },
+            {
+              extend: "pdf",
+              title: title,
+            },
+            {
+              extend: "print",
+              text: "Print",
+              title: "",
+              customize: function (win) {
+                $(win.document.body)
+                  .prepend(
+                    `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                     <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                       This report is generated using the Enterprise Land Information System
+                     </p>`
+                  )
+                  .css("font-size", "19px");
+
+                $(win.document.body)
+                  .find("table")
+                  .addClass("compact")
+                  .css("font-size", "19px")
+                  .css("width", "100%");
+              },
+            },
+            // {
+            //   extend: "colvis",
+            //   text: "Show / Hide Columns",
+            // },
+            "pageLength",
+          ],
+        })
+        .draw();
+    },
+  });
+});
+
+
+
+
+
+$(document).on("click", "#division_apps", function (e) {
+  e.preventDefault();
+
+  $("#past_due_apps_modal").modal("show");
+
+  // Get date inputs
+  let startDate = $("#start_date").val();
+  let endDate = $("#end_date").val();
+  let newdatestart = $("#startdate").val();
+  let newdateend = $("#enddate").val();
+
+  // Get staff and region info
+  let staff_id = $(this).data("id");
+  let staff_name = $(this).data("name");
+    let regName = $(this).data("reg");
+
+  let users_division = $("#director_division").val();
+  let regional_code = $("#director_regional_code").val();
+
+  console.log("Staff:", staff_id, staff_name, "Division:", users_division, "Region:", regional_code);
+
+  // Uppercase title with date range
+  let title = (
+    staff_name + " "+ regName + " "+
+    "APPLICATIONS FROM " +
+    newdatestart +
+    " TO " +
+    newdateend
+  ).toUpperCase();
+
+  document.getElementById("past_due_apps_Label").innerHTML = title;
+
+  // Initialize DataTable
+  $("#past_due_apps_with_staff").DataTable().clear().destroy();
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "director_compliance_apps_withdivision_with_officer",
+      staff_id: staff_id,
+      division: users_division,
+      region_code: regional_code,
+      date_from: startDate,
+      date_to: endDate,
+    },
+    cache: false,
+    success: function (response) {
+      let json_result = JSON.parse(response);
+      console.log(json_result.apps_with_staff);
+
+      if (!json_result.apps_with_staff || json_result.apps_with_staff.length === 0) {
+        console.log("No data found");
+        return;
+      }
+
+      let dataSet17 = [];
+      let jobNumbers = [];
+
+      for (let i = 0; i < json_result.apps_with_staff.length; i++) {
+        let app = json_result.apps_with_staff[i];
+
+
+ let checkbox = `
+    <input type="checkbox" class="app-checkbox form-check-input" value="${app.job_number}">
+  `;
+
+        let job_number = app.job_number;
+        let ar_name = app.ar_name;
+        let business_process_name = app.business_process_name;
+        let created_date = app.created_date;
+        let due_date = app.due_date;
+        let days_due = app.days_due;
+        let days_since_batched = app.days_since_batched;
+        let job_status = app.job_status;
+
+         const action = `
+             <td class="text-end">
+					<div class="dropdown">
+						<a href="javascript:void(0);"
+						class="btn btn-icon btn-sm btn-primary border action-btn""
+						data-bs-toggle="dropdown"
+						data-bs-display="static"
+						aria-expanded="false">
+							<i class="ri-more-2-line"></i>
+						</a>
+
+						<ul class="dropdown-menu dropdown-menu-end table-dropdown" data-popper-placement="bottom-end">
+
+							<!-- Cabinet -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								data-bs-toggle="modal"
+								data-bs-target="#cabinetModal"
+								data-target-id="${escapeHtml(app.job_number || '')}">
+									<i class="ri-hard-drive-2-line me-2"></i>
+									Track
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+
+               <li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+                data-receiver_name="${staff_name}" 
+                 data-officer_name="${staff_name}"
+                  data-officer_id="${staff_id}" 
+                  id="messageReply"
+                  data-job_number="${app.job_number}"> 
+								    <i class="ri-reply-line"></i>
+                  Notice & Replies
+								</a>
+							</li>
+
+						
+              	<li><hr class="dropdown-divider"></li>
+
+						
+					
+
+							<!-- Application Details (Form Submit) -->
+							<li>
+								<a class="dropdown-item"
+								href="javascript:void(0);"
+								onclick="viewApplicationDetails('${app.job_number}','${app.transaction_number}','${app.case_number}','${app.business_process_sub_name}')">
+									<i class="ri-information-line me-2"></i>
+									Application Details
+								</a>
+							</li>
+
+							<li><hr class="dropdown-divider"></li>
+							
+
+						</ul>
+					</div>
+				</td>
+        `;
+
+        dataSet17.push([
+          checkbox,
+          job_number,
+          ar_name,
+          created_date,
+          days_due,
+          due_date,
+          days_since_batched,
+          job_status,
+          action,
+        ]);
+
+        jobNumbers.push(job_number);
+      }
+
+      // Add Send Message button dynamically
+      let jobNumbersString = jobNumbers.join(",");
+      let pdfBtn = `
+        <button class="btn btn-primary ms-auto sendMessage" 
+                        data-officer_id="${staff_id}"
+                        data-receiver_name="${staff_name}"
+                        data-officer_name="${staff_name}">
+                    <i class="bi bi-chat-text"></i> Select & Send Message
+                </button>
+        `;
+      document.getElementById("sendmsg").innerHTML = pdfBtn;
+
+      // Initialize DataTable with export buttons
+      $("#past_due_apps_with_staff")
+        .DataTable({
+          data: dataSet17,
+          dom: "Bfrtip",
+          lengthMenu: [
+            [10, 25, 50, -1],
+            ["10 rows", "25 rows", "50 rows", "Show all"],
+          ],
+          buttons: [
+            {
+              extend: "copy",
+              title: title,
+            },
+            {
+              extend: "csv",
+              title: title,
+            },
+            {
+              extend: "excel",
+              title: title,
+            },
+            {
+              extend: "pdf",
+              title: title,
+            },
+            {
+              extend: "print",
+              text: "Print",
+              title: "",
+              customize: function (win) {
+                $(win.document.body)
+                  .prepend(
+                    `<h3 style="text-align:center; font-weight:bold; margin-bottom:20px;">${title}</h3>
+                     <p style="text-align:center; font-weight:bold; margin-bottom:30px;">
+                       This report is generated using the Enterprise Land Information System
+                     </p>`
+                  )
+                  .css("font-size", "19px");
+
+                $(win.document.body)
+                  .find("table")
+                  .addClass("compact")
+                  .css("font-size", "19px")
+                  .css("width", "100%");
+              },
+            },
+            // {
+            //   extend: "colvis",
+            //   text: "Show / Hide Columns",
+            // },
+            "pageLength",
+          ],
+        })
+        .draw();
+    },
+  });
+});
+
+
+
+
+
+
+
+
+
+
+// $(document).on("click", "#btn_status", function (e) {
+//   e.preventDefault();
+
+//       let jobNumber = $(this).data('id');
+
+//   // $("#past_due_apps_modal").modal("show");
+//   $.ajax({
+//     type: "POST",
+//     url: "director_dashboard",
+//     data: {
+//       request_type: "select_application_stages_by_job_number",
+//       job_number: jobNumber
+//     },
+//     cache: false,
+//     success: function (response) {
+//       let json_result = JSON.parse(response);
+//       console.log(json_result);
+
+
+//                   if (json_result.success && json_result.cabinet_tracking && json_result.cabinet_tracking.length > 0) {
+//                 let timelineHtml = '';
+//                 json_result.cabinet_tracking.forEach(item => {
+//                     timelineHtml += `
+//                       <div class="timeline-item">
+//                         <div class="timeline-header">
+//                           ${item.division} — ${item.divisional_registry_unit}
+//                         </div>
+//                         <div class="timeline-body">
+//                           <p><strong>Officer:</strong> ${item.created_by}</p>
+//                           <p><strong>Comment:</strong> ${item.officers_general_comments}</p>
+//                           <p><strong>Date:</strong> ${item.created_date}</p>
+//                           <p><strong>Days Spent:</strong> ${item.days_spent || 'N/A'}</p>
+//                         </div>
+//                       </div>
+//                     `;
+//                 });
+//                 $("#stagesTrackingContainer").html(timelineHtml);
+//             } else {
+//                 $("#stagesTrackingContainer").html('<div class="text-center text-danger mt-3">No tracking data found.</div>');
+//             }
+
+ 
+//     },
+//   });
+// });
+
+
+
+$(document).on("click", "#btn_status", function (e) {
+  e.preventDefault();
+
+  let jobNumber = $(this).data("id");
+
+  $("#stagesModal").modal("show");
+  $("#stagesTrackingContainer").html(
+    '<div class="text-center text-muted mt-3">Loading tracking details...</div>'
+  );
+
+  $.ajax({
+    type: "POST",
+    url: "director_dashboard",
+    data: {
+      request_type: "select_application_stages_by_job_number",
+      job_number: jobNumber,
+    },
+    cache: false,
+    success: function (response) {
+      console.log("Raw response:", response);
+
+      try {
+        let json_result = JSON.parse(response);
+
+        if (
+          json_result.success &&
+          json_result.cabinet_tracking &&
+          json_result.cabinet_tracking.length > 0
+        ) {
+          let tracking = json_result.cabinet_tracking;
+          let timelineHtml = `
+            <div class="timeline">
+          `;
+
+          tracking.forEach((item, i) => {
+            let statusClass = i === 0
+              ? "completed"
+              : i === tracking.length - 1
+              ? "active"
+              : "pending";
+
+            timelineHtml += `
+              <div class="timeline-item ${statusClass}">
+                <div class="timeline-icon">
+                  <i class="fas fa-check"></i>
+                </div>
+                <div class="timeline-content p-3">
+                  <h6 class="mb-1"> ${item.divisional_registry_unit || "N/A"}</h6>
+                  <p class="mb-1">${item.officers_general_comments || "No Comment"}</p>
+                  <small class="text-muted d-block"><strong>Officer:</strong> ${item.created_by || "N/A"}</small>
+                  <small class="text-muted d-block"><strong>Date:</strong> ${item.created_date}</small>
+                  <small class="text-muted"><strong>Days Spent:</strong> ${item.days_spent || "N/A"}</small>
+                </div>
+              </div>
+            `;
+          });
+
+          timelineHtml += `</div>`;
+          $("#stagesTrackingContainer").html(timelineHtml);
+        } else {
+          $("#stagesTrackingContainer").html(
+            `<div class="alert alert-warning text-center">No tracking data found</div>`
+          );
+        }
+      } catch (error) {
+        console.error("Error parsing JSON:", error);
+        $("#stagesTrackingContainer").html(
+          `<div class="alert alert-danger text-center">Invalid server response</div>`
+        );
+      }
+    },
+    error: function () {
+      $("#stagesTrackingContainer").html(
+        `<div class="alert alert-danger text-center">Server error. Try again!</div>`
+      );
+    },
+  });
+});
+
+
+
+
+
+
+// $(document).on('click', '#btn_status', function() {
+//     let jobNumber = $(this).data('id');
+
+//     console.log(jobNumber);
+//     // $("#stagesTrackingContainer").html('<div class="text-center text-muted mt-3">Loading tracking details...</div>');
+
+
+//     $.ajax({
+//     type: "POST",
+//     url: "director_dashboard",
+//     data: {
+//  request_type: "select_application_stage_details_by_job_number",
+//        job_number: jobNumber
+//     },
+//     cache: false,
+//     success: function (response) {
+//     //   $.ajax({
+//     // type: "POST",
+//     // url: "director_dashboard",
+//     // data: {
+//     //   request_type: "select_application_stage_details_by_job_number",
+//     //   data: JSON.stringify({ job_number: jobNumber }),
+
+//     // },
+//     // cache: false,
+//     // success: function (response) {
+//           console.log(response);
+
+//             if (response.success && response.cabinet_tracking && response.cabinet_tracking.length > 0) {
+//                 let timelineHtml = '';
+//                 response.cabinet_tracking.forEach(item => {
+//                     timelineHtml += `
+//                       <div class="timeline-item">
+//                         <div class="timeline-header">
+//                           ${item.division} — ${item.divisional_registry_unit}
+//                         </div>
+//                         <div class="timeline-body">
+//                           <p><strong>Officer:</strong> ${item.created_by}</p>
+//                           <p><strong>Comment:</strong> ${item.officers_general_comments}</p>
+//                           <p><strong>Date:</strong> ${item.created_date}</p>
+//                           <p><strong>Days Spent:</strong> ${item.days_spent || 'N/A'}</p>
+//                         </div>
+//                       </div>
+//                     `;
+//                 });
+//                 $("#stagesTrackingContainer").html(timelineHtml);
+//             } else {
+//                 $("#stagesTrackingContainer").html('<div class="text-center text-danger mt-3">No tracking data found.</div>');
+//             }
+
+ 
+          
+//         },
+//         error: function() {
+//             $("#cabinetTrackingContainer").html('<div class="text-center text-danger mt-3">Failed to load data.</div>');
+//         }
+//     });
+  
+// });
+
+
+
+// Retry function for error case
+function retrySendMessage() {
+    Swal.close();
+    // Trigger form submission again after a delay
+    setTimeout(() => {
+        $('#message-form').trigger('submit');
+    }, 500);
+}
+
+// Initialize message modal functionality on page load
+$(document).ready(function() {
+    // Character counter
+    $('#message').on('input', function() {
+        const length = $(this).val().length;
+        $('#charCount').text(`${length}/1000 characters`);
+        
+        // Update character count styling
+        $('#charCount').removeClass('warning danger');
+        if (length > 800) {
+            $('#charCount').addClass('warning');
+        }
+        if (length > 950) {
+            $('#charCount').addClass('danger');
+        }
+        
+        // Update preview
+        updateMessagePreview();
+    });
+    
+    // Template buttons
+    $('.template-btn').on('click', function() {
+        const template = $(this).data('template');
+        insertTemplate(template);
+    });
+    
+    // Message type radio buttons
+    $('input[name="message_type"]').on('change', function() {
+        updateMessagePreview();
+        updateSubmitButton();
+    });
+    
+    // Reset form button
+    $('#btnResetForm').on('click', function() {
+        resetMessageForm();
+    });
+});
+
+
+
+
+function resetMessageForm() {
+    // const form = $('#message-form')[0];
+    // if (form) {
+    //     form.reset();
+    // }
+    
+    // Reset character count
+    $('#charCount').text('0/1000 characters').removeClass('warning danger');
+    
+    // Reset preview
+    $('#messagePreview').html('<small class="text-muted">Start typing to see preview</small>');
+    $('#previewCard').hide();
+    
+    // Set default message type to "query" (since this is for compliance)
+    $('#message_type_query').prop('checked', true);
+    updateSubmitButton();
+    
+    // Clear any validation states
+    $('.form-control').removeClass('is-invalid is-valid');
+    $('#message-form').removeClass('was-validated');
+    
+    // Clear the message textarea
+    $('#message').val('');
+}
+
+
+
+// Helper function to update message preview
+function updateMessagePreview() {
+    const message = $('#message').val();
+    const messageType = $('input[name="message_type"]:checked').val();
+    const recipient = $('#recipientNameDisplay').text() || 'Recipient';
+    
+    let preview = '';
+    
+    if (message) {
+        preview = `<strong>To:</strong> ${recipient}\n`;
+        preview += `<strong>Type:</strong> ${messageType || 'Message'}\n\n`;
+        preview += message.substring(0, 200);
+        
+        if (message.length > 200) {
+            preview += '...';
+        }
+        
+        // Show preview card
+        $('#previewCard').show();
+    } else {
+        preview = '<small class="text-muted">Start typing to see preview</small>';
+        $('#previewCard').hide();
+    }
+    
+    $('#messagePreview').html(preview.replace(/\n/g, '<br>'));
+}
+
+// Helper function to insert template text
+function insertTemplate(template) {
+    const templates = {
+        query: "Dear Officer,\n\nPlease provide an update on the status of the application mentioned above. This requires urgent attention.\n\nBest regards,\n[Your Name]",
+        followup: "Dear Officer,\n\nFollowing up on the previous communication regarding this application. Please advise on the current status and any pending actions.\n\nRegards,\n[Your Name]",
+        reminder: "Dear Officer,\n\nThis is a reminder that the application is approaching/passed its TAT deadline. Kindly expedite action to avoid further delays.\n\nThank you,\n[Your Name]",
+        update: "Dear Officer,\n\nPlease update the status of this application in the system as soon as possible. If there are any issues, please let us know immediately.\n\nSincerely,\n[Your Name]"
+    };
+    
+    const $textarea = $('#message');
+    const currentText = $textarea.val();
+    const templateText = templates[template] || '';
+    
+    // Insert template, preserving existing text
+    if (currentText && !currentText.includes(templateText)) {
+        $textarea.val(currentText + '\n\n' + templateText);
+    } else if (!currentText) {
+        $textarea.val(templateText);
+    }
+    
+    // Trigger input event for character count and preview
+    $textarea.trigger('input');
+    
+    // Show success notification
+    Swal.fire({
+        title: 'Template Inserted',
+        text: `"${template}" template has been inserted`,
+        icon: 'success',
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#0d6efd',
+        timer: 2000
+    });
+}
+
+
+
+
+
+
+    const $cabinetModal = $('#cabinetModal');
+    // ==================== CABINET MODAL FUNCTIONALITY ====================
+    $cabinetModal.on('show.bs.modal', handleCabinetModalShow);
+
+
+        function clearTableRows($table) {
+        $table.find("tbody tr").remove();
+    }
+
+       function handleAjaxError(xhr, status, error) {
+        console.error('AJAX Error:', error);
+        showNotification(
+            `Error loading data. Please try again.`,
+            'error'
+        );
+    }
+
+          function escapeHtml(unsafe) {
+        if (typeof unsafe !== 'string') return unsafe;
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function updateRefreshTime() {
+		const now = new Date();
+		const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+		$('#lastRefreshTime').text(timeString);
+	}
+
+    function handleCabinetModalShow(event) {
+        const jobNumber = $(event.relatedTarget).data('target-id');
+        
+        if (!jobNumber) {
+            console.error('No job number provided for cabinet modal');
+            return;
+        }
+
+        resetCabinetModal();
+        loadCabinetDetails(jobNumber);
+    }
+
+    function resetCabinetModal() {
+        const fields = [
+            '#enq_applicant_name',
+            '#enq_applicant_type',
+            '#enq_cabinet_name',
+            '#enq_job_purpose',
+            '#enq_job_status',
+            '#enq_current_application_status'
+        ];
+        
+        fields.forEach(selector => $(selector).val(''));
+        clearTableRows($('#cabinet-tracking'));
+    }
+
+    function loadCabinetDetails(jobNumber) {
+        $.ajax({
+            type: "POST",
+            url: "Case_Management_Serv",
+            data: {
+                request_type: 'load_application_cabinet_details_by_job_number',
+                job_number: jobNumber
+            },
+            cache: false,
+            success: function(response) {
+                populateCabinetData(response);
+				updateRefreshTime();
+            },
+            error: handleAjaxError
+        });
+    }
+
+    function populateCabinetData(response) {
+        try {
+            const data = JSON.parse(response);
+            // console.log(data);
+            // Populate cabinet tracking table
+            if (data.cabinet_tracking && Array.isArray(data.cabinet_tracking)) {
+                const table = $('#cabinet-tracking');
+				table.empty();
+                data.cabinet_tracking.forEach(tracking => {
+                    table.append(createCabinetTrackingRow(tracking));
+                });
+
+				// Update last update date
+				if (data.cabinet_tracking && data.cabinet_tracking.length > 0) {
+					const lastUpdate = data.cabinet_tracking[data.cabinet_tracking.length - 1].created_date;
+					$('#lastUpdateDate').text(lastUpdate);
+				}
+
+				const trackingCount = Array.isArray(data.cabinet_tracking) ? data.cabinet_tracking.length : 0;
+				$('#trackingEntriesCount').text(trackingCount);
+				$('#historyCount').text(trackingCount + ' entries');
+            }
+
+            // Populate cabinet data fields
+            if (data.cabinet_data) {
+                const cabinet = data.cabinet_data;
+                $('#enq_applicant_name').val(cabinet.ar_name || '');
+                $('#enq_applicant_type').val(cabinet.business_process_sub_name || '');
+                $('#enq_cabinet_name').val(cabinet.file_number || '');
+                $('#enq_job_purpose').val(cabinet.job_purpose || '');
+                $('#enq_job_status').val(cabinet.job_status || '');
+                $('#enq_current_application_status').val(cabinet.current_application_status || '');
+            }
+        } catch (error) {
+            console.error('Error parsing cabinet data:', error);
+        }
+    }
+
+    function createCabinetTrackingRow(tracking) {
+        return `
+            <tr>
+                <td class="small">${escapeHtml(tracking.officers_general_comments || '')}</td>
+                <td class="small">${escapeHtml(tracking.division || '')}</td>
+                <td class="small">${escapeHtml(tracking.created_by || '')}</td>
+                <td class="small">${formatDate(tracking.created_date)}</td>
+            </tr>
+        `;
+    }
+
+    window.viewApplicationDetails = function(job_number, transaction_number, case_number, business_process_sub_name) {
+     
+      // Create a form dynamically
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'front_office_view_application';
+      form.target = '_blank'
+      form.style.display = 'none'; // Hide the form
+      
+      // Add the case number as an input field
+      const caseNumberInput = document.createElement('input');
+      caseNumberInput.type = 'hidden';
+      caseNumberInput.name = 'search_text';
+      caseNumberInput.value = case_number;
+      form.appendChild(caseNumberInput);
+
+      // Add the case number as an input field
+      const jobNumberInput = document.createElement('input');
+      jobNumberInput.type = 'hidden';
+      jobNumberInput.name = 'search_text';
+      jobNumberInput.value = job_number;
+      form.appendChild(jobNumberInput);
+
+      // Add the case number as an input field
+      const transactionNumberInput = document.createElement('input');
+      transactionNumberInput.type = 'hidden';
+      transactionNumberInput.name = 'search_text';
+      transactionNumberInput.value = transaction_number;
+      form.appendChild(transactionNumberInput);
+
+      // Add the case number as an input field
+      const businessProcessSubNameInput = document.createElement('input');
+      businessProcessSubNameInput.type = 'hidden';
+      businessProcessSubNameInput.name = 'search_text';
+      businessProcessSubNameInput.value = business_process_sub_name;
+      form.appendChild(businessProcessSubNameInput);
+      
+      // Add the form to the body and submit it
+      document.body.appendChild(form);
+      form.submit();
+};
+
+
+
+
+
+  $(document).on("click", ".sendMessageToAll", function (event) {
+    event.preventDefault();
+    
+    const officerName = $(this).data('officer_name');
+    const receiverName = $(this).data('receiver_name');
+    const jobNumber = $(this).data('job_number');
+    const officerId = $(this).data('officer_id');
+    
+    // Parse job numbers (could be a single job number or array)
+    let jobNumbers = $(this).data("job-number");
+    jobNumbers =
+      typeof jobNumbers === "undefined" ? [] : [{ job_number: jobNumbers }];
+
+      console.log(jobNumbers)
+
+    if (jobNumbers.length <= 0) {
+      jobNumbers = $(this)
+        .parents(".modal")
+        .find("table")
+        .DataTable()
+        .rows()
+        .data()
+        .toArray()
+        .map((currentItem) => {
+          return { job_number: currentItem.job_number };
+        });
+    }
+    
+    // Update modal with data
+    updateSendMessageModal({
+        officer_id: officerId,
+        officer_name: officerName,
+        receiver_name: receiverName,
+        job_numbers: jobNumbers
+    });
+});
+
+
+
+
+
+$(document).on("click", ".sendMessage_unit_case", function (event) {
+    event.preventDefault();
+    
+    const officerName = $(this).data('officer_name');
+    const receiverName = $(this).data('receiver_name');
+    const jobNumber = $(this).data('job_number');
+    const officerId = $(this).data('officer_id');
+    
+    // Parse job numbers (could be a single job number or array)
+    let jobNumbersArray = [];
+    if (jobNumber) {
+        if (Array.isArray(jobNumber)) {
+            jobNumbersArray = jobNumber.map(job => ({ job_number: job }));
+        } else {
+            jobNumbersArray = [{ job_number: jobNumber }];
+        }
+    }
+    
+    // Update modal with data
+    updateSendMessageModal({
+        officer_id: officerId,
+        officer_name: officerName,
+        receiver_name: receiverName,
+        job_numbers: jobNumbersArray
+    });
+});
+
+
+
+
+
+$(document).on("click", "#messageReply", function (event) {
+  event.preventDefault();
+
+  const staffName = $(this).data('staffName');
+  const staffId = $(this).data('staff_id');
+  const jobNumber = $(this).data('job_number');
+
+  console.log("Job Number:", jobNumber);
+  console.log("Modal element exists:", $("#previousNoticesModal").length > 0);
+
+   let title = "Notice(s) sent on Appication With Job Number "+jobNumber
+  document.getElementById('previousNoticesModalLabel').innerHTML = title;
+
+//   sendMessageModal.find("#modalTitleText").html(titleText);
+
+
+  previousNoticesModalLabel
+  
+  // Try showing modal
+  var modalElement = document.getElementById('previousNoticesModal');
+  if (modalElement) {
+    var modal = new bootstrap.Modal(modalElement);
+    modal.show();
+  } else {
+    console.error("Modal element not found!");
+  }
+
+  fetchPreviousNotices(jobNumber);
+});
+
+
+
+function fetchPreviousNotices(jobNumber) {
+  // Show loading message
+  $("#messagesContainer").html('<p class="text-muted mb-0">Loading previous messages...</p>');
+
+  $.ajax({
+    url: "director_dashboard", // your backend endpoint
+    type: "POST",
+    data: { 
+      request_type: 'select_application_notices_by_job_number',
+      job_number: jobNumber // ✅ send job number directly
+    },
+    success: function (response) {
+      console.log(response);
+
+    var json_response = JSON.parse(response);
+
+      if (json_response.success && json_response.cabinet_tracking && json_response.cabinet_tracking.length > 0) {
+        let html = `<ul class="list-group">`;
+        json_response.cabinet_tracking.forEach(msg => {
+  const typeColor =
+    msg.notice_type.toLowerCase() === "query"
+      ? "bg-warning text-dark"
+      : msg.notice_type.toLowerCase() === "warning"
+      ? "bg-danger text-white"
+      : "bg-secondary text-white";
+
+  html += `
+    <li class="list-group-item border-0 shadow-sm mb-3 rounded-3 p-3" style="background: #f9fafb;">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <span class="badge ${typeColor} px-3 py-1 rounded-pill text-capitalize">${msg.notice_type}</span>
+        <small class="text-muted fw-light">
+          <i class="far fa-clock me-1"></i>${new Date(msg.created_date).toLocaleString()}
+        </small>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center">
+        <p class="mb-2 text-dark flex-grow-1" style="font-size: 0.95rem;">
+          ${msg.details}
+        </p>
+        <button class="btn btn-sm btn-outline-primary ms-2 view-replies-btn"
+        data-notice-id="${msg.notice_id}"
+        title="View Replies">
+  <i class="fas fa-comments"></i>
+</button>
+      </div>
+
+      <div class="text-muted small">
+        <i class="fas fa-user-circle me-1 text-secondary"></i>
+        <b>${msg.created_by}</b> → <span>${msg.receiver_name}</span>
+      </div>
+    </li>
+  `;
+});
+
+
+        html += `</ul>`;
+        $("#messagesContainer").html(html);
+      } else {
+        $("#messagesContainer").html('<p class="text-muted mb-0">No previous messages found for this application.</p>');
+      }
+    },
+    error: function () {
+      $("#messagesContainer").html('<p class="text-danger mb-0">Failed to load previous messages.</p>');
+    }
+  });
+}
+
+
+  let refreshInterval = null;
+  let isMonitorMode = false;
+  let dashboardCache = null;
+  let cacheTimestamp = null;
+  const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+  window.updateStandardDashboardUI = function(data) {
+    if (!data || !data.apps_rec_day) return;
+
+    let totalRec = data.total_apps_rec?.[0]?.total || 1;
+    let totalRecComp = data.total_comp_divisional_year?.[0]?.total || 0;
+    let totalpercentage = ((totalRecComp / totalRec) * 100).toFixed(2) + '%';
+
+    $("#app-received-today").html(new Intl.NumberFormat().format(data.apps_rec_day[0].total));
+    $("#app-received-month").html(new Intl.NumberFormat().format(data.apps_rec_month[0].total));
+    $("#app-completed-today").html(new Intl.NumberFormat().format(data.apps_comp_day[0].total));
+    $("#app-completed-month").html(new Intl.NumberFormat().format(data.apps_comp_month[0].total));
+
+    showRegionSummary("#app-received-year", data.apps_rec_divisional, 'info');
+    showRegionSummary("#app-completed-year", data.apps_comp_divisional, 'success');
+    showRegionSummary("#app-received-completed-year", data.apps_comp_divisional_year, 'default');
+    showRegionSummary("#app-past-due-year", data.apps_past_due_dates_divisional, 'danger');
+    showRegionSummary("#app-with-divisions", data.apps_at_division, 'warning');
+
+    const pecElement = document.getElementById('pec_id');
+    if (pecElement) pecElement.innerHTML = totalpercentage;
+
+    // Visual feedback for refresh
+    $(".dashboard-main-card").addClass("pulse-refresh");
+    setTimeout(() => $(".dashboard-main-card").removeClass("pulse-refresh"), 1000);
+    
+    $("#lastRefreshTime").text(new Date().toLocaleTimeString());
+  };
+
+  window.refreshDirectorDashboardStats = function() {
+    if ($("#page_name").text() === "director_compliance") {
+      const user_division = $('#director_division').val();
+      
+      $.ajax({
+        type: "POST",
+        url: "director_dashboard",
+        data: {
+            request_type: 'director_report_dashboard_all',
+            division: user_division,
+            date_from: startDate,
+            date_to: endDate
+        },
+        cache: false,
+        success: function(response) {
+            try {
+                if (!response) return;
+                
+                let data;
+                if (typeof response === 'string') {
+                    if (response.includes('Exception') || response.includes('error')) {
+                        console.warn('Dashboard background refresh encountered server error');
+                        return;
+                    }
+                    data = JSON.parse(response);
+                } else {
+                    data = response;
+                }
+
+                updateStandardDashboardUI(data);
+            } catch (e) { console.error(e); }
+        }
+      });
+    }
+  }
+
+// ==================== MONITOR MODE ====================
+window.toggleMonitorMode = function() {
+    if (!isMonitorMode) {
+        // Enter monitor mode
+        isMonitorMode = true;
+        const btn   = $("#btnMonitorMode");
+        const indicator = $("#monitorIndicator");
+
+        btn.addClass("btn-danger")
+           .removeClass("btn-outline-primary")
+           .html('<i class="ri-stop-circle-line me-2"></i>Exit Monitor');
+
+        indicator.removeClass("d-none").addClass("d-flex");
+
+        // Toggle UI
+        document.body.classList.add('monitor-active');
+        $('#monitorDashboard').show();
+        $('.col-xl-2, .col-xl-10').hide(); // hide original layout
+
+        // Fullscreen
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(() => {});
+        }
+
+        // Start clock
+        startMonitorClock();
+
+        // Force fresh data for the selected region
+        dashboardCache = null;
+        cacheTimestamp = null;
+
+        // Auto-set date range: 1st of the month to Today
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        if (dateFromPicker && dateToPicker) {
+            dateFromPicker.setDate(firstDay, true);
+            dateToPicker.setDate(now, true);
+        }
+
+        // Test range: January 1, 2023 to May 19, 2023
+      // const testStart = "2023-01-01";
+      // const testEnd = "2023-05-19";
+
+      // if (dateFromPicker && dateToPicker) {
+      //     isSyncingMonitorDates = true;
+      //     try {
+      //         dateFromPicker.setDate(testStart, true);
+      //         dateToPicker.setDate(testEnd, true);
+      //     } finally {
+      //         isSyncingMonitorDates = false;
+      //     }
+      // }
+
+
+        // Load data
+        loadMonitorDashboard();
+
+        // Auto-refresh every 15 minutes
+        refreshInterval = setInterval(loadMonitorDashboard, 15 * 60 * 1000);
+
+        Swal.fire({
+            icon: 'success',
+            title: 'Monitor Mode',
+            text: 'Dashboard will auto-refresh every 15 minutes.',
+            timer: 2500,
+            showConfirmButton: false,
+            toast: true,
+            position: 'top-end'
+        });
+
+    } else {
+        // Exit monitor mode request
+        if (document.fullscreenElement) {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        } else {
+            exitMonitorMode();
+        }
+    }
+};
+
+function exitMonitorMode() {
+    isMonitorMode = false;
+    const btn = $("#btnMonitorMode");
+    const indicator = $("#monitorIndicator");
+
+    btn.addClass("btn-outline-primary")
+       .removeClass("btn-danger")
+       .html('<i class="ri-monitor-line me-2"></i>Monitor Mode');
+
+    indicator.addClass("d-none").removeClass("d-flex");
+
+    document.body.classList.remove('monitor-active');
+    $('#monitorDashboard').hide();
+    $('.col-xl-2, .col-xl-10').show();
+
+    stopMonitorClock();
+
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+
+    if (retryTimer) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+    }
+
+    Swal.fire({
+        icon: 'info',
+        title: 'Monitor Mode Deactivated',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+    });
+}
+
+// Handle ESC key or browser-native exit fullscreen
+document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && isMonitorMode) {
+        exitMonitorMode();
+    }
+});
+
+// ==================== MONITOR CLOCK ====================
+let clockInterval = null;
+
+function startMonitorClock() {
+    updateClock();
+    clockInterval = setInterval(updateClock, 1000);
+}
+
+function stopMonitorClock() {
+    if (clockInterval) {
+        clearInterval(clockInterval);
+        clockInterval = null;
+    }
+}
+
+function updateClock() {
+    const now  = new Date();
+    const time = now.toLocaleTimeString('en-GB', {
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    const date = now.toLocaleDateString('en-GB', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    $('#monitorClock').text(time);
+    $('#monitorDate').text(date);
+}
+
+// ==================== LOAD MONITOR DASHBOARD ====================
+function loadMonitorDashboard() {
+    startDate = $('#start_date').val();
+    endDate = $('#end_date').val();
+
+    const now = Date.now();
+
+    // Use cache if fresh (5 minutes)
+    if (dashboardCache && cacheTimestamp && (now - cacheTimestamp < CACHE_TTL_MS)) {
+        renderMonitorDashboard(dashboardCache);
+        return;
+    }
+
+    const user_division = $('#director_division').val();
+    
+    // Hide region label since we are not filtering by it
+    $('#mon-current-region').hide();
+
+    // Show skeletons while loading
+    showMonitorSkeletons();
+
+    // Show loading indicator
+    $('#monitorLastUpdate').html(`
+        <span class="text-warning">
+            <i class="ri-loader-4-line ri-spin me-1"></i>Loading...
+        </span>
+    `);
+
+    $.ajax({
+        type: "POST",
+        url: "director_dashboard",
+        data: {
+            request_type: 'director_report_dashboard_all',
+            division: user_division,
+            date_from: startDate,
+            date_to: endDate
+        },
+        cache: false,
+        timeout: 120000,
+        success: function(response) {
+            try {
+                if (!response || typeof response !== 'string') {
+                    if (typeof response === 'object') {
+                        renderMonitorDashboard(response);
+                        flashUpdateIndicator();
+                        return;
+                    }
+                    throw new Error('Empty or invalid response format');
+                }
+
+                // Check if response looks like an error message instead of JSON
+                if (response.includes('Exception') || response.includes('error')) {
+                    console.error('Server returned error message:', response);
+                    showMonitorError('Database connection error. Retrying...');
+                    scheduleRetry();
+                    return;
+                }
+
+                const data = JSON.parse(response);
+                dashboardCache = data;
+                cacheTimestamp = Date.now();
+                renderMonitorDashboard(data);
+                flashUpdateIndicator();
+            } catch (e) {
+                console.error('Parse error:', e, 'Response was:', response);
+                showMonitorError('Data format error. Retrying in 2 minutes...');
+                scheduleRetry();
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('AJAX Error:', status, error);
+            if (status === 'timeout' && dashboardCache) {
+                renderMonitorDashboard(dashboardCache);
+                $('#monitorLastUpdate').html(`<span class="text-warning">Cached (${new Date(cacheTimestamp).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})})</span>`);
+            } else {
+                showMonitorError('Request failed. Retrying...');
+                scheduleRetry();
+            }
+        }
+    });
+}
+
+let retryTimer = null;
+function scheduleRetry(delayMs = 120000) {
+    if (retryTimer) clearTimeout(retryTimer);
+    let secondsLeft = Math.round(delayMs / 1000);
+    const countdownInterval = setInterval(() => {
+        secondsLeft--;
+        $('#monitorLastUpdate').html(`<span class="text-danger">Retrying in ${secondsLeft}s...</span>`);
+        if (secondsLeft <= 0) clearInterval(countdownInterval);
+    }, 1000);
+    retryTimer = setTimeout(() => {
+        clearInterval(countdownInterval);
+        loadMonitorDashboard();
+    }, delayMs);
+}
+
+function flashUpdateIndicator() {
+    const now = new Date().toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+    $('#monitorLastUpdate').html(`<span class="text-success"><i class="ri-checkbox-circle-line me-1"></i>${now}</span>`);
+    $('.stat-card-monitor').css('border-color', 'rgba(16,185,129,0.8)');
+    setTimeout(() => { $('.stat-card-monitor').css('border-color', 'rgba(42, 92, 143, 0.3)'); }, 1500);
+}
+
+function renderMonitorDashboard(data) {
+    if (!data) return;
+    const fmtLocal = n => new Intl.NumberFormat().format(n || 0);
+    const recToday  = data.apps_rec_day?.[0]?.total  || 0;
+    const compToday = data.apps_comp_day?.[0]?.total || 0;
+    const pending   = data.apps_rec_month?.[0]?.total || 0; // Using pending for Director dashboard
+    const totalRec  = data.total_apps_rec?.[0]?.total || 1;
+    const totalComp = data.total_comp_divisional_year?.[0]?.total || 0;
+    const rate      = ((totalComp / totalRec) * 100).toFixed(1) + '%';
+
+    animateCounter('mon-rec-today', recToday);
+    animateCounter('mon-comp-today', compToday);
+    animateCounter('mon-rec-month', pending);
+    $('#mon-completion-rate').text(rate);
+
+    $('#mon-rec-today-trend').text(`${fmtLocal(pending)} pending`);
+    $('#mon-comp-today-trend').text(`${fmtLocal(totalComp)} completed YTD`);
+    $('#mon-month-trend').text(`${fmtLocal(totalRec)} total YTD`);
+
+    renderMonitorRegionBar('mon-division-received', data.apps_rec_divisional, '#3b82f6');
+    renderMonitorRegionBar('mon-division-completed', data.apps_comp_divisional, '#10b981');
+    renderMonitorRegionBar('mon-past-due', data.apps_past_due_dates_divisional, '#ef4444');
+    renderMonitorRegionBar('mon-with-divisions', data.apps_at_division, '#f59e0b');
+
+    buildTicker(data);
+    updateStandardDashboardUI(data);
+}
+
+function renderMonitorRegionBar(containerId, data, color) {
+    const container = $(`#${containerId}`);
+    if (!container.length || !data || !data.length) {
+        container.html('<p class="text-muted small text-center py-3">No data available</p>');
+        return;
+    }
+    const total = data.reduce((s, i) => s + (parseInt(i.total) || 0), 0);
+    if (total === 0) {
+        container.html('<p class="text-muted small text-center py-3">No data for period</p>');
+        return;
+    }
+
+    const sortedData = [...data].sort((a, b) => (parseInt(b.total) || 0) - (parseInt(a.total) || 0));
+    const maxItems = containerId === 'mon-past-due' ? 5 : 6;
+    const visibleItems = sortedData.slice(0, maxItems);
+    const hiddenCount = Math.max(sortedData.length - visibleItems.length, 0);
+    const fmtLocal = n => new Intl.NumberFormat().format(n || 0);
+    const visibleTotal = visibleItems.reduce((sum, item) => sum + (parseInt(item.total) || 0), 0);
+    const html = visibleItems.map(item => {
+        const pct = ((item.total / total) * 100).toFixed(1);
+        return `<div class="division-progress-item">
+            <div class="division-label"><span>${item.region_name || item.division}</span><span style="color: ${color};">${fmtLocal(item.total)} <small>(${pct}%)</small></span></div>
+            <div class="progress"><div class="progress-bar" role="progressbar" style="width: 0%; background: ${color};" data-target-width="${pct}"></div></div>
+        </div>`;
+    }).join('');
+
+    container.html(`
+        <div class="monitor-region-list">
+            <div class="monitor-region-summary">
+                <span class="monitor-region-summary-label"></span>
+                <span class="monitor-region-summary-value">${fmtLocal(visibleTotal)}</span>
+            </div>
+            <div class="monitor-region-items">${html}</div>
+            ${hiddenCount > 0 ? `<div class="monitor-region-footnote">Showing top ${visibleItems.length} of ${sortedData.length} regions</div>` : ''}
+        </div>
+    `);
+    setTimeout(() => { container.find('.progress-bar').each(function() { $(this).animate({ width: $(this).data('target-width') + '%' }, 800); }); }, 100);
+}
+
+function animateCounter(elementId, targetValue) {
+    const el = $(`#${elementId}`);
+    const start = parseInt(el.text().replace(/,/g, '')) || 0;
+    const duration = 1000;
+    const steps = 30;
+    const stepVal = (targetValue - start) / steps;
+    let current = start;
+    let step = 0;
+    const timer = setInterval(() => {
+        current += stepVal;
+        step++;
+        el.text(new Intl.NumberFormat().format(Math.round(current)));
+        if (step >= steps) { clearInterval(timer); el.text(new Intl.NumberFormat().format(targetValue)); }
+    }, duration / steps);
+}
+
+function buildTicker(data) {
+    const items = [];
+    const fmtLocal = n => new Intl.NumberFormat().format(n || 0);
+    const recToday = data.apps_rec_day?.[0]?.total || 0;
+    items.push(`<span class="monitor-ticker-item"><span class="ticker-badge" style="background:rgba(59,130,246,0.2);color:#60a5fa;">RECEIVED</span>${fmtLocal(recToday)} received today</span>`);
+    const compToday = data.apps_comp_day?.[0]?.total || 0;
+    items.push(`<span class="monitor-ticker-item"><span class="ticker-badge" style="background:rgba(16,185,129,0.2);color:#34d399;">COMPLETED</span>${fmtLocal(compToday)} completed today</span>`);
+    if (data.apps_rec_divisional) {
+        data.apps_rec_divisional.slice(0, 5).forEach(d => {
+            items.push(`<span class="monitor-ticker-item"><span class="ticker-badge" style="background:rgba(139,92,246,0.2);color:#a78bfa;">${d.region_name || d.division}</span>${fmtLocal(d.total)} received</span>`);
+        });
+    }
+    $('#monitorTicker').html(items.join('&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;'));
+}
+
+function showMonitorSkeletons() {
+    ['mon-rec-today', 'mon-comp-today', 'mon-rec-month', 'mon-completion-rate'].forEach(id => { $(`#${id}`).html('<div class="skeleton" style="height:50px;width:80px;"></div>'); });
+    ['mon-division-received', 'mon-division-completed', 'mon-past-due', 'mon-with-divisions'].forEach(id => {
+        $(`#${id}`).html('<div class="skeleton mb-2" style="height:18px;"></div><div class="skeleton mb-2" style="height:18px;width:85%;"></div><div class="skeleton mb-2" style="height:18px;width:70%;"></div>');
+    });
+}
+
+function showMonitorError(msg) {
+    $('#mon-division-received, #mon-division-completed, #mon-past-due, #mon-with-divisions').html(`<p class="text-danger small text-center py-2">${msg}</p>`);
+}
+
+const fmt = n => new Intl.NumberFormat().format(n || 0);
+
+});
