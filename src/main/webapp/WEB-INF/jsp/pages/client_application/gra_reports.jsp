@@ -1256,7 +1256,6 @@
 
         var graTable = null;
         var graRowDetails = {};
-        var graWarningTimer = null;
         var $activeMobileDetailsButton = null;
 
         if (window.flatpickr) {
@@ -1276,8 +1275,6 @@
                     if (dateString && currentEndDate && currentEndDate < dateString) {
                         dateToPicker.clear();
                         showNotice("End Date must be the same as or later than Start Date.", true);
-                    } else if (dateString && currentEndDate && exceedsThreeMonths(dateString, currentEndDate)) {
-                        showThreeMonthWarning();
                     }
                 }
             });
@@ -1295,58 +1292,9 @@
                     if (dateString && currentStartDate && currentStartDate > dateString) {
                         dateFromPicker.clear();
                         showNotice("Start Date must be the same as or earlier than End Date.", true);
-                    } else if (dateString && currentStartDate && exceedsThreeMonths(currentStartDate, dateString)) {
-                        showThreeMonthWarning();
                     }
                 }
             });
-        }
-
-        function maximumThreeMonthDate(dateString) {
-            var parts = dateString.split("-").map(Number);
-            var targetYear = parts[0];
-            var targetMonth = parts[1] - 1 + 3;
-            targetYear += Math.floor(targetMonth / 12);
-            targetMonth %= 12;
-
-            var lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
-            var targetDay = Math.min(parts[2], lastDayOfTargetMonth);
-            var month = String(targetMonth + 1).padStart(2, "0");
-            var day = String(targetDay).padStart(2, "0");
-
-            return targetYear + "-" + month + "-" + day;
-        }
-
-        function exceedsThreeMonths(dateFrom, dateTo) {
-            return dateTo > maximumThreeMonthDate(dateFrom);
-        }
-
-        function showThreeMonthWarning() {
-            var message = "You can only generate a report for a date range of up to 3 months.";
-            showNotice(message, true);
-
-            clearTimeout(graWarningTimer);
-            $(".gra-range-toast").remove();
-
-            var $toast = $(
-                '<div class="gra-range-toast" role="alert" aria-live="assertive">' +
-                    '<div class="gra-range-toast-icon"><i class="ri-calendar-event-line"></i></div>' +
-                    '<div><strong>Date range too long</strong><p>' + message + '</p></div>' +
-                    '<button type="button" class="gra-range-toast-close" aria-label="Close warning">' +
-                        '<i class="ri-close-line"></i>' +
-                    '</button>' +
-                    '<span class="gra-range-toast-progress"></span>' +
-                '</div>'
-            ).appendTo("body");
-
-            function closeToast() {
-                clearTimeout(graWarningTimer);
-                $toast.addClass("is-closing");
-                setTimeout(function () { $toast.remove(); }, 220);
-            }
-
-            $toast.find(".gra-range-toast-close").on("click", closeToast);
-            graWarningTimer = setTimeout(closeToast, 8000);
         }
 
         function isValidReportDate(value) {
@@ -1707,11 +1655,6 @@
 
             if (dateFrom > dateTo) {
                 showNotice("Start Date cannot be later than End Date. Please correct the date range.", true);
-                return;
-            }
-
-            if (exceedsThreeMonths(dateFrom, dateTo)) {
-                showNotice("The selected date range cannot be more than 3 months. Please choose a shorter date range.", true);
                 return;
             }
 

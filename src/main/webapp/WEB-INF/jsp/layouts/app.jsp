@@ -10,7 +10,7 @@
     <meta charset="UTF-8">
     <meta name='viewport' content='width=device-width, initial-scale=1'>
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title> ELIS 5.0 :: ${page_name} </title>
+    <title> ELIS | GRA REPORT </title>
     <meta name="Description" content="">
     <meta name="Author" content="">
 	<meta name="keywords" content="">
